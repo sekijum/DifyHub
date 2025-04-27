@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums ---
+
+enum Role {
+  ADMINISTRATORS      // 全体管理者 (ユーザー、プラン、設定、全アプリ等を管理)
+  DEVELOPER  // アプリ管理者 (全てのアプリを管理)
+  USER       // 一般ユーザー
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AppStatus {
+  PUBLISHED
+  DRAFT
+  ARCHIVED
+}
+
+enum PlanStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum NotificationTarget {
+  ALL
+  PRO_USERS
+  FREE_USERS
+}
+
+
+// --- Models ---
+
+model User {
+  id           Int        @id @default(autoincrement())
+  name         String
+  email        String     @unique
+  password     String     // Remember to hash passwords before saving!
+  role         Role       @default(USER)
+  status       UserStatus @default(ACTIVE)
+  planId       Int?       // Optional relation to Plan
+  plan         Plan?      @relation(fields: [planId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  createdApps  App[]      @relation("CreatedBy")
+
+  @@index([planId])
+}
+
+model Plan {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  price     Int        // Store price in the smallest currency unit (e.g., cents/yen)
+  credits   Int        // Monthly credits
+  status    PlanStatus @default(INACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  users     User[]     // Users subscribed to this plan
+}
+
+model App {
+  id                 Int        @id @default(autoincrement())
+  name               String
+  description        String?    @db.Text // Use TEXT for potentially longer descriptions
+  thumbnailUrl       String?
+  appUrl             String?    // URL for the app itself
+  status             AppStatus  @default(DRAFT)
+  isSubscriptionOnly Boolean    @default(false)
+  creatorId          Int
+  creator            User       @relation("CreatedBy", fields: [creatorId], references: [id])
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  subImages          AppImage[] // Relation to sub-images
+
+  @@index([creatorId])
+}
+
+model AppImage {
+  id        Int      @id @default(autoincrement())
+  url       String   // URL of the sub-image
+  order     Int      // To maintain the order of images
+  appId     Int
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade) // Cascade delete if app is deleted
+  createdAt DateTime @default(now())
+
+  @@index([appId])
+  @@index([appId, order]) // Index for ordering within an app
+}
+
+model Notification {
+  id           Int                @id @default(autoincrement())
+  title        String
+  content      String             @db.Text
+  target       NotificationTarget @default(ALL)
+  startAt      DateTime?          // Optional: Start display date/time
+  endAt        DateTime?          // Optional: End display date/time (null means indefinite)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([target])
+  @@index([startAt])
+  @@index([endAt])
+}
+
+model Setting {
+  key       String   @id // e.g., "SITE_TITLE", "MAINTENANCE_MODE"
+  value     String   @db.Text // Store diverse values as strings
+  updatedAt DateTime @updatedAt
+}

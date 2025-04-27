@@ -1,0 +1,28 @@
+{
+  "name": "nuxt-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "fmt": "prettier --write ./"
+  },
+  "dependencies": {
+    "@mdi/font": "^7.4.47",
+    "axios": "^1.8.4",
+    "dayjs": "^1.11.13",
+    "nuxt": "^3.16.2",
+    "swiper": "^11.2.6",
+    "vee-validate": "^4.15.0",
+    "vue": "^3.5.13",
+    "vuedraggable": "^4.1.0",
+    "yup": "^1.6.1"
+  },
+  "devDependencies": {
+    "vite-plugin-vuetify": "^2.1.1",
+    "vuetify": "^3.8.2"
+  }
+}
