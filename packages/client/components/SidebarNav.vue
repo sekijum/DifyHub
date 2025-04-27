@@ -4,8 +4,8 @@
       :title="userEmail" 
     >
       <template v-slot:subtitle>
-        <v-chip color="blue" size="small" class="mr-1">{{ userRoleDisplay }}</v-chip>
-        <v-chip color="green" size="small">{{ userPlanDisplay }}</v-chip>
+        <v-chip color="blue" size="small" class="mr-1 my-1" variant="flat">{{ userRoleDisplay }}</v-chip>
+        <v-chip color="green" size="small" class="my-1" variant="flat">{{ userPlanDisplay }}</v-chip>
       </template>
     </v-list-item>
     <v-divider></v-divider>

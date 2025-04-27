@@ -103,6 +103,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import PageTitle from '~/components/PageTitle.vue';
+import { useRouter } from 'vue-router';
 
 // Simulate fetching the registration setting
 // TODO: Replace this with an actual API call to fetch settings
@@ -129,6 +130,8 @@ const avatarFile = ref<File | null>(null); // To store the selected file
 const avatarPreviewUrl = ref<string | null>(null); // For image preview
 const fileInput = ref<HTMLInputElement | null>(null);
 const defaultAvatar = 'https://placehold.jp/100x100.png?text=Avatar'; // Default placeholder
+
+const router = useRouter();
 
 // Basic password confirmation rule
 const passwordConfirmationRule = computed(() => {
@@ -201,7 +204,9 @@ const handleSignUp = () => {
   // }
   // callSignupApi(formData).then(...)
 
-  alert('サインアップ処理（ダミー）を実行しました。アバターファイルもコンソールに出力されます。');
+  // Redirect to OTP verification page after successful signup (simulated)
+  console.log('Signup successful (simulated), redirecting to OTP verification...');
+  router.push('/otp-verify'); 
 };
 
 // Define layout if needed

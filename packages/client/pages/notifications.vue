@@ -11,9 +11,9 @@
             :class="['mb-4', 'notification-card', `border-${item.level}`]"
             variant="outlined"
           >
-            <v-card-title class="pb-1 d-flex justify-space-between align-center">
+            <v-card-title class="pb-1 d-flex flex-column align-start flex-sm-row justify-sm-space-between align-sm-center">
               <span class="text-body-1 font-weight-medium">{{ item.title }}</span>
-              <v-chip label size="small" variant="tonal" class="ml-2 flex-shrink-0"> 
+              <v-chip label size="small" variant="tonal" class="mt-1 mt-sm-0 ms-sm-2 flex-shrink-0"> 
                 {{ formatDate(item.startAt) }}
               </v-chip>
             </v-card-title>

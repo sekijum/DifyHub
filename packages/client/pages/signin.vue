@@ -41,13 +41,21 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import PageTitle from '~/components/PageTitle.vue';
+import { useRouter } from 'vue-router';
 
 const email = ref('');
 const password = ref('');
+const router = useRouter();
 
 const handleSignIn = () => {
   console.log('Attempting sign in with:', email.value);
   // TODO: Implement actual sign-in logic (API call, validation, etc.)
+  if (email.value && password.value) {
+    console.log('Sign-in successful (simulated), redirecting to OTP verification...');
+    router.push('/otp-verify');
+  } else {
+    console.log('Sign-in failed (simulated)');
+  }
 };
 
 // Define layout if needed (e.g., if you have a specific auth layout)
