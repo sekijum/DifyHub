@@ -11,15 +11,15 @@
     <v-divider></v-divider>
 
     <v-list-item prepend-icon="mdi-home-city" title="ホーム" value="home" to="/" :active="route.path === '/'"></v-list-item>
-    <v-list-item prepend-icon="mdi-star-outline" title="高く評価したアプリ" value="liked" to="/liked" :active="route.path === '/liked'"></v-list-item>
-    <v-list-item prepend-icon="mdi-bookmark-multiple-outline" title="ブックマーク" value="bookmarks" to="/bookmarks" :active="route.path === '/bookmarks'"></v-list-item>
-    <v-list-item prepend-icon="mdi-account" title="マイページ" value="account" to="/mypage" :active="route.path.startsWith('/mypage')"></v-list-item>
+    <!-- <v-list-item prepend-icon="mdi-star-outline" title="高く評価したアプリ" value="mypage-liked" to="/mypage/liked" :active="route.path === '/mypage/liked'"></v-list-item> -->
+    <!-- <v-list-item prepend-icon="mdi-bookmark-multiple-outline" title="ブックマーク" value="mypage-bookmarks" to="/mypage/bookmarks" :active="route.path === '/mypage/bookmarks'"></v-list-item> -->
+    <!-- <v-list-item prepend-icon="mdi-account" title="マイページ" value="account" to="/mypage" :active="route.path === '/mypage'"></v-list-item> -->
 
     <!-- Add Notifications Link -->
-    <v-list-item prepend-icon="mdi-bell-outline" title="お知らせ" value="notifications" to="/notifications" :active="route.path.startsWith('/notifications')"></v-list-item>
+    <!-- <v-list-item prepend-icon="mdi-bell-outline" title="お知らせ" value="notifications" to="/notifications" :active="route.path.startsWith('/notifications')"></v-list-item> -->
 
     <!-- Add Developer Admin Link -->
-    <v-list-item prepend-icon="mdi-developer-board" title="開発者管理画面" value="developer-admin" to="/developer" :active="route.path.startsWith('/developer')"></v-list-item>
+    <!-- <v-list-item prepend-icon="mdi-developer-board" title="開発者管理画面" value="developer-admin" to="/developer" :active="route.path.startsWith('/developer')"></v-list-item> -->
 
     <v-divider class="my-2"></v-divider>
     <v-list-item prepend-icon="mdi-login" title="サインイン" value="signin" to="/signin" :active="route.path === '/signin'"></v-list-item>

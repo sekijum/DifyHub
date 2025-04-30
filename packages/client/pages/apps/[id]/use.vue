@@ -2,13 +2,14 @@
     <div class="fill-height d-flex justify-center align-center" v-if="isLoading">
       <v-progress-circular indeterminate color="primary"></v-progress-circular>
     </div>
-    <iframe 
+    <!-- <iframe 
         :src="appUrl"
         style="width: 100%; height: 100%; min-height: 700px;"
         frameborder="0" 
         allow="microphone" 
         @load="handleLoad"
-    ></iframe>
+    ></iframe> -->
+    <iframe src="https://udify.app/chatbot/ez1pf83HVV3JgWO4" style="width: 100%; height: 100%; min-height: 700px" frameborder="0" allow="microphone" @load="handleLoad"></iframe>
   </template>
   
   <script setup lang="ts">    
