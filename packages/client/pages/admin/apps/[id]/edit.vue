@@ -1,167 +1,239 @@
 <template>
   <v-container>
-    <PageTitle :title="`アプリ編集: ${editableApp.name || '...'}`" />
+    <div class="d-flex align-center mb-4">
+      <v-btn
+        icon="mdi-arrow-left"
+        variant="text"
+        class="mr-2"
+        size="small"
+        @click="cancelEdit"
+      ></v-btn>
+      <PageTitle :title="`アプリステータス変更: ${editableApp.name || '...'}`" />
+    </div>
 
-    <v-form ref="editForm">
-      <v-card variant="outlined">
-        <v-card-title class="pt-4 pb-2">基本情報</v-card-title>
-        <v-card-text>
-          <v-container>
-            <v-row>
-              <!-- Name (Disabled) -->
-              <v-col cols="12" md="6">
-                <v-text-field
-                  v-model="editableApp.name"
-                  label="名前"
-                  variant="outlined"
-                  density="compact"
-                  disabled
-                ></v-text-field>
-              </v-col>
-              <!-- Status (Editable) -->
-              <v-col cols="12" md="6">
-                <v-select
-                  v-model="editableApp.status"
-                  :items="statusOptions"
-                  item-title="title"
-                  item-value="value"
-                  label="ステータス *"
-                  required
-                  variant="outlined"
-                  density="compact"
-                  :rules="[rules.required]"
-                ></v-select>
-              </v-col>
-              <!-- App URL (Disabled) -->
-              <v-col cols="12">
-                <v-text-field
-                  v-model="editableApp.appUrl"
-                  label="アプリURL"
-                  variant="outlined"
-                  density="compact"
-                  placeholder="設定されていません"
-                  disabled
-                ></v-text-field>
-              </v-col>
-              <!-- Description (Disabled) -->
-              <v-col cols="12">
-                 <v-textarea
-                  v-model="editableApp.description"
-                  label="説明"
-                  rows="3"
-                  variant="outlined"
-                  density="compact"
-                  disabled
-                ></v-textarea>
-              </v-col>
-              <!-- Subscription Only (Disabled) -->
-              <v-col cols="12" md="6">
-                <v-switch
-                  v-model="editableApp.isSubscriptionOnly"
-                  color="primary"
-                  label="サブスクリプション限定"
-                  hide-details
-                  disabled
-                ></v-switch>
-              </v-col>
-            </v-row>
-          </v-container>
-        </v-card-text>
+    <v-row>
+      <v-col cols="12" md="8">
+        <v-form ref="editForm">
+          <v-card variant="outlined" class="app-edit-card">
+            <v-card-title class="d-flex align-center bg-light-blue-lighten-5 px-4 py-3">
+              <v-icon icon="mdi-pencil-outline" class="mr-2" color="primary"></v-icon>
+              <span class="text-h6">ステータス変更</span>
+            </v-card-title>
+            
+            <v-card-text class="pt-4">
+              <v-alert
+                type="info"
+                variant="tonal"
+                border="start"
+                density="compact"
+                class="mb-4"
+                icon="mdi-information-outline"
+              >
+                このページではアプリのステータスのみ変更できます。
+                ステータスによっては開発者へメール通知が送信されます。
+              </v-alert>
+              
+              <v-container>
+                <v-row>
+                  <!-- 現在のステータス (表示のみ) -->
+                  <v-col cols="12" md="6">
+                    <v-sheet class="pa-3 rounded border mb-3">
+                      <div class="text-caption text-grey">現在のステータス</div>
+                      <div class="d-flex align-center mt-1">
+                        <v-chip
+                          :color="getStatusColor(originalStatus)"
+                          size="small"
+                          class="mr-2"
+                        >
+                          {{ getStatusText(originalStatus) }}
+                        </v-chip>
+                        <span class="text-subtitle-1">{{ getStatusText(originalStatus) }}</span>
+                      </div>
+                    </v-sheet>
+                  </v-col>
+                  
+                  <!-- 新しいステータス (変更可能) -->
+                  <v-col cols="12" md="6">
+                    <v-select
+                      v-model="editableApp.status"
+                      :items="statusOptions"
+                      item-title="title"
+                      item-value="value"
+                      label="新しいステータス *"
+                      required
+                      variant="outlined"
+                      density="comfortable"
+                      :rules="[rules.required]"
+                      @update:model-value="handleStatusChange"
+                      :disabled="isLoading || isSaving"
+                    ></v-select>
+                  </v-col>
+                  
+                  <!-- ステータス変更理由（アプリ状態に応じて表示） -->
+                  <v-col cols="12" v-if="shouldShowReasonField">
+                    <v-alert
+                      v-if="reasonRequired"
+                      type="warning"
+                      variant="tonal"
+                      border="start"
+                      density="compact"
+                      class="mb-3"
+                      icon="mdi-email-alert-outline"
+                    >
+                      {{ reasonLabel }}は必須です。この内容は開発者にメールで通知されます。
+                    </v-alert>
+                    <v-alert
+                      v-else
+                      type="info"
+                      variant="tonal"
+                      border="start"
+                      density="compact"
+                      class="mb-3"
+                      icon="mdi-email-outline"
+                    >
+                      入力された{{ reasonLabel }}は開発者にメールで通知されます。
+                    </v-alert>
+                    
+                    <v-textarea
+                      v-model="resultReason"
+                      :label="reasonLabel"
+                      rows="4"
+                      variant="outlined"
+                      density="comfortable"
+                      :rules="reasonRequired ? [rules.required] : []"
+                      :hint="reasonHint"
+                      persistent-hint
+                      :disabled="isLoading || isSaving"
+                      counter="300"
+                      maxlength="300"
+                    ></v-textarea>
+                  </v-col>
+                </v-row>
+              </v-container>
+            </v-card-text>
+            
+            <v-divider></v-divider>
+            
+            <v-card-actions class="pa-4">
+              <v-spacer></v-spacer>
+              <v-btn
+                variant="text"
+                @click="cancelEdit"
+                :disabled="isSaving"
+              >
+                キャンセル
+              </v-btn>
+              <v-btn
+                color="primary"
+                variant="elevated"
+                @click="saveAppStatus"
+                :loading="isSaving"
+                :disabled="isLoading"
+              >
+                ステータスを保存
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-form>
+      </v-col>
+      
+      <!-- アプリ情報サイドバー -->
+      <v-col cols="12" md="4">
+        <v-card variant="outlined" class="app-info-card">
+          <v-card-title class="bg-grey-lighten-4 px-4 py-3">
+            <v-icon icon="mdi-information-outline" class="mr-2" color="grey-darken-1"></v-icon>
+            <span>アプリ情報</span>
+          </v-card-title>
+          
+          <v-card-text class="pa-4">
+            <div class="d-flex justify-center mb-4">
+              <v-img
+                v-if="editableApp.thumbnailUrl"
+                :src="editableApp.thumbnailUrl"
+                width="200"
+                :aspect-ratio="16/9"
+                cover
+                class="rounded-lg border"
+              >
+                <template v-slot:placeholder>
+                  <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
+                    <v-progress-circular indeterminate color="grey-lighten-4"></v-progress-circular>
+                  </div>
+                </template>
+              </v-img>
+              <v-sheet
+                v-else
+                width="200"
+                height="112"
+                color="grey-lighten-3"
+                class="d-flex align-center justify-center rounded-lg border"
+              >
+                <v-icon icon="mdi-image-outline" size="large" color="grey"></v-icon>
+              </v-sheet>
+            </div>
+            
+            <v-list density="compact" class="bg-grey-lighten-5 rounded mb-2">
+              <v-list-item>
+                <template v-slot:prepend>
+                  <v-icon icon="mdi-identifier" size="small" class="mr-2"></v-icon>
+                </template>
+                <v-list-item-title class="text-caption text-grey-darken-1">ID</v-list-item-title>
+                <v-list-item-subtitle>{{ editableApp.id }}</v-list-item-subtitle>
+              </v-list-item>
+              
+              <v-list-item>
+                <template v-slot:prepend>
+                  <v-icon icon="mdi-account-outline" size="small" class="mr-2"></v-icon>
+                </template>
+                <v-list-item-title class="text-caption text-grey-darken-1">作成者</v-list-item-title>
+                <v-list-item-subtitle>{{ editableApp.creator?.name || '不明' }}</v-list-item-subtitle>
+              </v-list-item>
+              
+              <v-list-item>
+                <template v-slot:prepend>
+                  <v-icon icon="mdi-link-variant" size="small" class="mr-2"></v-icon>
+                </template>
+                <v-list-item-title class="text-caption text-grey-darken-1">アプリページ</v-list-item-title>
+                <v-list-item-subtitle class="text-truncate">
+                  <v-btn
+                    v-if="editableApp.status === 'PUBLISHED'"
+                    variant="text"
+                    size="small"
+                    color="primary"
+                    density="compact"
+                    :href="`${frontendUrl}/apps/${appId}`"
+                    target="_blank"
+                    class="pa-0 text-decoration-underline"
+                    prepend-icon="mdi-open-in-new"
+                  >
+                    アプリページを表示
+                  </v-btn>
+                  <span v-else class="text-grey">
+                    {{ getStatusText(editableApp.status || '') }}状態のため表示できません
+                  </span>
+                </v-list-item-subtitle>
+              </v-list-item>
+              
+              <v-list-item>
+                <template v-slot:prepend>
+                  <v-icon icon="mdi-clock-outline" size="small" class="mr-2"></v-icon>
+                </template>
+                <v-list-item-title class="text-caption text-grey-darken-1">作成日</v-list-item-title>
+                <v-list-item-subtitle>{{ formatDate(editableApp.createdAt) }}</v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+            
+            <v-card-subtitle class="px-0 pt-2 pb-1">説明</v-card-subtitle>
+            <div class="text-body-2 text-grey-darken-2 px-3 py-2 rounded bg-grey-lighten-5 border">
+              {{ editableApp.description || '説明はありません' }}
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
 
-        <v-divider></v-divider>
-
-        <!-- Image Settings Section (Display Only) -->
-        <v-card-title class="text-h6 pt-4 pb-1 px-4">画像設定 (表示のみ)</v-card-title>
-        <v-card-text class="px-4 pt-3">
-          <v-container fluid class="pa-0">
-             <!-- Thumbnail Row -->
-             <v-row>
-                <v-col cols="12">
-                    <h6 class="text-subtitle-1 font-weight-regular mb-2">サムネイル画像</h6>
-                    <!-- File input removed as it's disabled -->
-                    <div v-if="editableApp.thumbnailUrl" class="d-flex align-center mt-2">
-                       <v-img
-                         :src="editableApp.thumbnailUrl"
-                         :key="editableApp.thumbnailUrl"
-                         width="160"
-                         :aspect-ratio="16 / 9"
-                         class="elevation-1 rounded mr-4 flex-shrink-0"
-                         cover
-                         style="border: 1px solid #e0e0e0;"
-                       >
-                         <!-- Placeholder/Error slots -->
-                         <template v-slot:placeholder>
-                           <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                             <v-icon color="grey-darken-1" size="large">mdi-image-outline</v-icon>
-                           </div>
-                         </template>
-                         <template v-slot:error>
-                           <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                             <v-icon color="error" size="large">mdi-alert-circle-outline</v-icon>
-                           </div>
-                         </template>
-                       </v-img>
-                    </div>
-                     <div v-else class="text-caption text-grey mt-2">
-                       サムネイル画像は設定されていません。
-                     </div>
-                </v-col>
-            </v-row>
-
-            <v-divider class="my-5"></v-divider>
-
-            <!-- Sub Images Row -->
-            <v-row>
-                <v-col cols="12">
-                    <h6 class="text-subtitle-1 font-weight-regular mb-2">サブ画像</h6>
-                    <!-- File input removed as it's disabled -->
-                    <div v-if="editableApp.subImageUrls && editableApp.subImageUrls.length > 0" class="mt-2 d-flex flex-wrap ga-2">
-                       <div v-for="(url, index) in editableApp.subImageUrls" :key="index" class="list-group-item pa-0 position-relative" style="width: 128px; height: 72px;">
-                         <v-img
-                           :src="url"
-                           width="128"
-                           height="72"
-                           :aspect-ratio="16 / 9"
-                           class="elevation-1 rounded"
-                           cover
-                           style="border: 1px solid #e0e0e0;"
-                         >
-                           <template v-slot:placeholder>
-                             <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                               <v-progress-circular indeterminate size="20" width="2" color="grey-lighten-1"></v-progress-circular>
-                             </div>
-                           </template>
-                           <template v-slot:error>
-                             <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                               <v-icon color="error" size="small">mdi-alert-circle-outline</v-icon>
-                             </div>
-                           </template>
-                         </v-img>
-                         <!-- Close button removed -->
-                       </div>
-                    </div>
-                    <div v-else class="text-caption text-grey mt-2">
-                       サブ画像は設定されていません。
-                     </div>
-                </v-col>
-             </v-row>
-           </v-container>
-           <!-- Removed required field note -->
-        </v-card-text>
-        <v-divider></v-divider>
-        <v-card-actions class="pa-4">
-          <v-spacer></v-spacer>
-          <v-btn variant="text" @click="cancelEdit">
-            キャンセル
-          </v-btn>
-          <v-btn color="primary" variant="elevated" @click="saveAppStatus" :loading="isSaving">
-            ステータスを保存
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-form>
     <!-- Snackbar for feedback -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000" location="top">
       {{ snackbar.text }}
       <template v-slot:actions>
         <v-btn variant="text" @click="snackbar.show = false">閉じる</v-btn>
@@ -171,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PageTitle from '~/components/PageTitle.vue';
 
@@ -181,19 +253,34 @@ definePageMeta({
 
 const route = useRoute();
 const router = useRouter();
+const { $api, $dayjs } = useNuxtApp();
+const config = useRuntimeConfig();
+const frontendUrl = computed(() => config.public.frontendUrl || 'http://localhost:3000');
 const appId = Number(route.params.id);
 
+// APIから取得したアプリデータの型定義
 interface App {
   id: number;
   name: string;
-  description: string;
-  thumbnailUrl?: string;
-  subImageUrls?: string[];
-  status: 'published' | 'draft' | 'archived';
-  isSubscriptionOnly: boolean;
-  appUrl?: string;
-  createdAt?: string;
-  authorName?: string;
+  description: string | null;
+  thumbnailUrl: string | null;
+  appUrl: string;
+  status: string; // AppStatus Enum: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'PRIVATE' | 'SUSPENDED'
+  isSubscriptionLimited: boolean;
+  categoryId: number | null;
+  category?: {
+    id: number;
+    name: string;
+  } | null;
+  creator: {
+    id: number;
+    name: string;
+    email: string;
+    avatarUrl: string | null;
+  };
+  subImages?: Array<{ id: number; imageUrl: string; order: number }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const editForm = ref<any>(null);
@@ -201,69 +288,134 @@ const editableApp = reactive<Partial<App>>({
     id: appId,
     name: '',
     description: '',
-    status: 'draft',
-    thumbnailUrl: undefined,
-    subImageUrls: [],
-    isSubscriptionOnly: false,
+    status: 'DRAFT',
+    thumbnailUrl: null,
+    subImages: [],
+    isSubscriptionLimited: false,
     appUrl: '',
     createdAt: '',
-    authorName: '',
+    creator: {
+      id: 0,
+      name: '',
+      email: '',
+      avatarUrl: null
+    }
 });
+
 const isSaving = ref(false);
+const isLoading = ref(false);
+const resultReason = ref(''); // ステータス変更理由
+const originalStatus = ref(''); // 元のステータス（変更前）
 const snackbar = reactive({ show: false, text: '', color: 'success' });
 
 const statusOptions = ref([
-    { title: '公開', value: 'published' },
-    { title: '下書き', value: 'draft' },
-    { title: 'アーカイブ', value: 'archived' },
+    { title: '公開', value: 'PUBLISHED' },
+    { title: '下書き', value: 'DRAFT' },
+    { title: 'アーカイブ', value: 'ARCHIVED' },
+    { title: '非公開', value: 'PRIVATE' },
+    { title: '停止中', value: 'SUSPENDED' },
 ]);
 
 const rules = {
   required: (value: string) => !!value || '必須項目です。',
 };
 
-const generateSampleApps = (count: number): App[] => {
-  const appsList: App[] = [];
-  const appNames = ['顧客管理システム', '在庫追跡ツール', 'プロジェクトボード', '請求書ジェネレータ', '社内Wiki', 'イベントカレンダー', '簡易ブログエンジン', 'タスクランナー', 'URL短縮サービス', '画像リサイザー'];
-  const statuses: ('published' | 'draft' | 'archived')[] = ['published', 'published', 'draft', 'archived'];
-  const authors = ['管理ユーザーA', '管理ユーザーB', 'システム', '田中 太郎', '佐藤 花子'];
+// ステータス変更理由フィールドの表示条件
+const shouldShowReasonField = computed(() => {
+  // 元のステータスと異なるかつ、特定のステータスに変更する場合に表示
+  return editableApp.status !== originalStatus.value && 
+    (editableApp.status === 'PRIVATE' || 
+     editableApp.status === 'SUSPENDED' || 
+     editableApp.status === 'ARCHIVED');
+});
 
-  for (let i = 1; i <= count; i++) {
-    const name = `${appNames[Math.floor(Math.random() * appNames.length)]} #${i}`;
-    const description = `これは ${name} のサンプル説明文です。様々な機能を提供します。`;
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const isSubscriptionOnly = Math.random() < 0.3;
-    const createdAt = `2023-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`;
-    const appUrl = Math.random() < 0.7 ? `https://example.com/app/${i}` : undefined;
-    const thumbnailUrl = Math.random() > 0.2 ? `https://placehold.jp/160x90.png?text=Thumb+${i}` : undefined;
-    const subImageUrls: string[] = [];
-    const numSubImages = Math.floor(Math.random() * 6);
-    for (let j = 0; j < numSubImages; j++) {
-        if (Math.random() > 0.1) {
-           subImageUrls.push(`https://placehold.jp/128x72.png?text=Sub+${i}-${j+1}`);
-        }
-    }
-    const authorName = authors[Math.floor(Math.random() * authors.length)];
-    appsList.push({ id: i, name, description, thumbnailUrl, subImageUrls: subImageUrls.slice(0, 5), status, isSubscriptionOnly, appUrl, createdAt, authorName });
+// ステータス変更理由のラベル
+const reasonLabel = computed(() => {
+  switch (editableApp.status) {
+    case 'PRIVATE': return '非公開理由';
+    case 'SUSPENDED': return '停止理由';
+    case 'ARCHIVED': return 'アーカイブ理由';
+    default: return 'ステータス変更理由';
   }
-  return appsList;
+});
+
+// ステータス変更理由のヒント
+const reasonHint = computed(() => {
+  switch (editableApp.status) {
+    case 'PRIVATE': return '非公開にする理由を具体的に記載してください';
+    case 'SUSPENDED': return '停止する理由を具体的に記載してください';
+    case 'ARCHIVED': return 'アーカイブする理由があれば記載してください';
+    default: return '';
+  }
+});
+
+// ステータス変更理由が必須かどうか
+const reasonRequired = computed(() => {
+  return editableApp.status === 'PRIVATE' || editableApp.status === 'SUSPENDED';
+});
+
+// ステータス変更時の処理
+const handleStatusChange = (newStatus: string) => {
+  if (newStatus !== originalStatus.value) {
+    if (newStatus === 'PUBLISHED' && (originalStatus.value === 'PRIVATE' || originalStatus.value === 'SUSPENDED')) {
+      // 非公開・停止から公開への直接変更は許可しない
+      snackbar.text = `${getStatusText(originalStatus.value)}から直接公開状態に変更することはできません。一度DRAFTに変更してください。`;
+      snackbar.color = 'warning';
+      snackbar.show = true;
+      editableApp.status = originalStatus.value;
+    }
+  }
 };
 
-onMounted(() => {
-  console.log(`Fetching data for app ID: ${appId}`);
-  const sampleApps = generateSampleApps(35);
-  const foundApp = sampleApps.find(app => app.id === appId);
-
-  if (foundApp) {
-    Object.assign(editableApp, foundApp);
-  } else {
-    console.error(`App with ID ${appId} not found.`);
-    snackbar.text = 'アプリが見つかりません。';
+// APIからアプリデータを取得
+const fetchAppData = async () => {
+  isLoading.value = true;
+  
+  try {
+    const response = await $api.get(`/admin/apps/${appId}`);
+    
+    if (response.data) {
+      // レスポンスデータをeditableAppにコピー
+      Object.assign(editableApp, response.data);
+      // 初期ステータスを保存
+      originalStatus.value = response.data.status;
+    } else {
+      throw new Error('アプリデータの形式が不正です');
+    }
+  } catch (error: any) {
+    console.error('アプリデータ取得エラー:', error);
+    snackbar.text = error.response?.data?.message || 'アプリデータの取得に失敗しました';
     snackbar.color = 'error';
     snackbar.show = true;
     setTimeout(() => router.push('/admin/apps'), 2000);
+  } finally {
+    isLoading.value = false;
   }
-});
+};
+
+// ステータスのテキスト表示を取得
+const getStatusText = (status: string): string => {
+  const option = statusOptions.value.find(o => o.value === status);
+  return option ? option.title : status;
+};
+
+// ステータスの色を取得
+const getStatusColor = (status: string): string => {
+  switch (status) {
+    case 'PUBLISHED': return 'success';
+    case 'DRAFT': return 'warning';
+    case 'ARCHIVED': return 'grey';
+    case 'PRIVATE': return 'info';
+    case 'SUSPENDED': return 'error';
+    default: return 'grey';
+  }
+};
+
+// 日付フォーマット
+const formatDate = (dateString?: string) => {
+  if (!dateString) return '不明';
+  return $dayjs(dateString).format('YYYY/MM/DD');
+};
 
 const cancelEdit = () => {
   router.push('/admin/apps');
@@ -273,8 +425,16 @@ const saveAppStatus = async () => {
   if (!editForm.value) return;
   const { valid } = await editForm.value.validate();
   if (!valid) {
-      console.log('Status validation failed.');
-      return;
+    console.log('フォームバリデーションエラー');
+    return;
+  }
+
+  // ステータス変更理由が必要なのに入力されていない場合
+  if (shouldShowReasonField.value && reasonRequired.value && !resultReason.value) {
+    snackbar.text = `${reasonLabel.value}を入力してください`;
+    snackbar.color = 'error';
+    snackbar.show = true;
+    return;
   }
 
   isSaving.value = true;
@@ -282,10 +442,10 @@ const saveAppStatus = async () => {
   try {
     const payload = {
       status: editableApp.status!,
+      resultReason: resultReason.value || undefined
     };
 
-    console.log(`Saving status for app ID ${appId} (simulation):`, payload);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const response = await $api.patch(`/admin/apps/${appId}/status`, payload);
 
     snackbar.text = 'アプリのステータスを保存しました。';
     snackbar.color = 'success';
@@ -293,9 +453,9 @@ const saveAppStatus = async () => {
 
     setTimeout(() => router.push('/admin/apps'), 1500);
 
-  } catch (error) {
-    console.error("Error during status save simulation:", error);
-    snackbar.text = 'ステータスの保存中にエラーが発生しました。';
+  } catch (error: any) {
+    console.error("ステータス保存エラー:", error);
+    snackbar.text = error.response?.data?.message || 'ステータスの保存中にエラーが発生しました。';
     snackbar.color = 'error';
     snackbar.show = true;
   } finally {
@@ -303,10 +463,27 @@ const saveAppStatus = async () => {
   }
 };
 
+// ページ読み込み時にデータをフェッチ
+onMounted(() => {
+  fetchAppData();
+});
+
 </script>
 
 <style scoped>
-.list-group-item {
-  display: block;
+.app-edit-card, .app-info-card {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.bg-light-blue-lighten-5 {
+  background-color: #e3f2fd;
+}
+.border {
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

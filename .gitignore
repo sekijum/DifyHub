@@ -24,6 +24,9 @@ go.work.sum
 *.DS_Store
 packages/server/tmp
 packages/server/build/*
+packages/server/dist/*
+packages/server/node_modules/*
+packages/client/node_modules/*
 
 logs
 *.log
@@ -59,3 +62,5 @@ docker/minio/*
 terraform/prd/terraform.tfvars
 .github/workflows/.secrets
 **/.terraform/*
+
+/volumes/*

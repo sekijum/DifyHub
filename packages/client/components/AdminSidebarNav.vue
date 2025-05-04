@@ -12,7 +12,7 @@
 
     <v-divider class="my-2"></v-divider>
     <v-list-subheader>設定</v-list-subheader>
-    <v-list-item prepend-icon="mdi-cogs" title="アプリ全体設定" value="admin-settings" to="/admin/settings" :active="route.path.startsWith('/admin/settings')"></v-list-item>
+    <v-list-item prepend-icon="mdi-cogs" title="アプリ全体設定" value="admin-setting" to="/admin/setting" :active="route.path.startsWith('/admin/setting')"></v-list-item>
 
     <v-divider class="my-2"></v-divider>
     <v-list-item prepend-icon="mdi-logout" title="サインアウト" value="admin-signout" @click="handleSignOut"></v-list-item>

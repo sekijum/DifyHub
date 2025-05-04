@@ -2,43 +2,45 @@
   <v-container fluid pt-0 mt-0 pa-0>
     <!-- Notification Section -->
     <v-row pt-0 mt-0 px-4 pt-4>
-      <!-- Developer Promotion Alert -->
-      <v-col cols="12" class="pb-0">
-        <v-alert
-          type="success" 
-          title="開発者になってアプリを公開しませんか？"
-          variant="tonal"
-          prominent
-          border="start"
-          density="compact"
-        >
-          作成したアプリを世界中のユーザーに届け、収益化するチャンスです。
-          <template v-slot:append>
-            <v-btn 
-              color="success" 
-              variant="outlined" 
-              size="small"
-              to="/developer/apply"
-              class="ml-4"
-              style="text-transform: none;"
-            >
-              開発者申請へ
-            </v-btn>
-          </template>
-        </v-alert>
+
+      <!-- Loading Indicator for Notifications -->
+      <v-col v-if="notificationsLoading" cols="12">
+        <v-progress-linear indeterminate color="primary" height="4"></v-progress-linear>
       </v-col>
 
-      <!-- Security Announcement Alert -->
-      <v-col cols="12">
+      <!-- Error Alert for Notifications -->
+      <v-col v-else-if="notificationsError" cols="12">
         <v-alert
-          type="info"
-          title="セキュリティ強化のお知らせ"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          border="start"
+          :text="notificationsError"
+        ></v-alert>
+      </v-col>
+
+      <!-- Display Top Notifications -->
+      <v-col
+        v-else-if="topNotifications.length > 0"
+        v-for="notification in topNotifications"
+        :key="notification.id"
+        cols="12"
+      >
+        <v-alert
+          :type="notification.level.toLowerCase() as any" 
+          :title="notification.title"
           variant="tonal"
           prominent
           border="start"
           density="compact"
         >
-          セキュリティ向上のため、一部の決済処理において3Dセキュア（本人認証サービス）による追加認証が必要になる場合がございます。ご理解とご協力をお願いいたします。
+          <span style="white-space: pre-wrap;">{{ notification.content }}</span>
+           <!-- Optional: Add a link to the full notifications page -->
+           <!--
+           <template v-slot:append>
+             <v-btn size="small" variant="text" to="/notifications">詳細</v-btn>
+           </template>
+           -->
         </v-alert>
       </v-col>
     </v-row>
@@ -57,39 +59,84 @@
             active-class="text-primary"
             class="ma-0"
          >
-            <v-chip key="all" :value="null" filter>すべて</v-chip>
-            <v-chip
-               v-for="category in categories"
-               :key="category"
-               :value="category"
-               filter
-            >
-               {{ category }}
-            </v-chip>
+            <!-- 手動で追加 -->
+            <v-chip key="latest" value="最新" filter>最新</v-chip>
+            <v-chip key="trending" value="トレンド" filter>トレンド</v-chip>
+             <!-- <v-chip key="all" :value="null" filter>すべて</v-chip> --> <!-- 「すべて」は一旦削除 -->
+            <!-- APIから取得したカテゴリ -->
+             <v-chip
+                v-for="category in popularCategories"
+                :key="category.id"
+                :value="category.name"
+                filter
+             >
+                {{ category.name }} ({{ category.appCount }})
+             </v-chip>
          </v-chip-group>
+         <!-- カテゴリ読み込みエラー表示 -->
+          <v-alert v-if="categoriesError" type="warning" density="compact" variant="text" class="mt-1 pa-0">
+              人気カテゴリの読み込みに失敗しました。
+          </v-alert>
+      </v-col>
+
+       <!-- Removed Popular Tags Section -->
+    </v-row>
+
+    <!-- Loading Indicator -->
+    <v-row v-if="pending" justify="center" class="my-8">
+      <v-progress-circular indeterminate color="primary"></v-progress-circular>
+    </v-row>
+
+    <!-- Error Message -->
+    <v-row v-else-if="error" justify="center" class="my-8">
+       <v-col cols="12" md="8">
+        <v-alert type="error" variant="tonal">
+          アプリの読み込み中にエラーが発生しました: {{ error.message }}
+        </v-alert>
       </v-col>
     </v-row>
 
-    <v-row pt-0 mt-0>
+    <!-- App List -->
+    <v-row v-else-if="appsData && appsData.data.length > 0" pt-0 mt-0>
       <v-col
-        v-for="app in paginatedApps"
+        v-for="app in appsData.data"
         :key="app.id"
         cols="12"
         sm="6"
         md="4"
         lg="3"
       >
-        <AppCard 
-          :app="app" 
+        <AppCard
+          :app="{
+            id: app.id,
+            name: app.name,
+            description: app.description || '',
+            imageUrl: app.thumbnailUrl || 'https://placehold.jp/300x300.png?text=No+Image',
+            likes: app.likesCount,
+            dislikes: app.dislikesCount,
+            usageCount: app.usageCount,
+            requiresSubscription: app.isSubscriptionLimited,
+            creatorId: app.creatorId || null,
+            creatorName: app.creatorName,
+            creatorAvatarUrl: app.creatorAvatarUrl ?? null,
+            category: app.category
+          }"
           @title-click="goToAppDetail(app.id)"
-          :creator-name="app.creatorName" 
-          :creator-avatar-url="app.creatorAvatarUrl"
           @creator-click="goToUserProfile"
-          :positive-rating-rate="app.positiveRatingRate"
         />
       </v-col>
     </v-row>
-    <v-row justify="center">
+
+    <!-- No Apps Found -->
+     <v-row v-else justify="center" class="my-8">
+      <v-col cols="auto">
+        <p>該当するアプリが見つかりませんでした。</p>
+      </v-col>
+    </v-row>
+
+
+    <!-- Pagination -->
+    <v-row v-if="appsData && appsData.total > itemsPerPage" justify="center">
       <v-col cols="auto">
         <v-pagination
           v-model="currentPage"
@@ -102,141 +149,227 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useNuxtApp } from '#app';
 import AppCard from '~/components/AppCard.vue';
 import AppSearch from '~/components/AppSearch.vue';
 
-interface App {
+// --- API DTO Types (Align with backend DTO) ---
+interface AppDto {
   id: number;
   name: string;
-  description: string;
-  imageUrl: string;
-  likes: number;
-  category: string;
-  publishedDate: Date;
+  description: string | null;
+  thumbnailUrl: string | null;
   usageCount: number;
-  requiresSubscription: boolean;
+  createdAt: string; 
+  categoryId: number | null;
+  category?: { id: number; name: string } | null; // ★ Add category object
+  isSubscriptionLimited: boolean; 
   creatorId?: number | null;
-  creatorName?: string;
-  creatorAvatarUrl?: string;
-  positiveRatingRate?: number; // 0 to 1
-  dislikes?: number;
+  creatorName?: string; 
+  creatorAvatarUrl?: string | null; 
+  likesCount: number; // ★ Add likesCount
+  dislikesCount: number; // ★ Add dislikesCount
 }
 
+interface AppListResponse {
+  data: AppDto[];
+  total: number;
+}
 
-// カテゴリーリスト更新
-const baseCategories = ['仕事効率化', 'エンタメ', '開発ツール', 'コミュニケーション', 'ユーティリティ'];
-const dummyCategories = Array.from({ length: 10 }, (_, i) => `業務効率化 ${i + 1}`);
-const categories = ['トレンド', '最新', ...baseCategories, ...dummyCategories];
+interface CategoryDto {
+  id: number;
+  name: string;
+  appCount?: number;
+}
 
-const apps = ref<App[]>(Array.from({ length: 100 }, (_, i) => {
-    const appId = i + 1;
-    const publishedDate = new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000);
-    const category = baseCategories[i % baseCategories.length];
-    const baseDesc = `これはアプリ${appId}の説明です。カテゴリは${category}です。様々な機能があり、日々の業務を効率化します。`;
-    const additionalDesc = `さらに多くの機能や使い方があり、ユーザーの多様なニーズに応えることができます。定期的なアップデートにより新機能が追加され、セキュリティも強化されています。直感的なインターフェースで、初心者から上級者まで幅広く利用可能です。`; 
-    let fullDescription = baseDesc + additionalDesc;
-    while (fullDescription.length < 200) { 
-        fullDescription += " 追加情報。";
-    }
-
-    const description = fullDescription.length > 100
-      ? fullDescription.substring(0, 100) + '...'
-      : fullDescription;
-    
-    // Dummy creator data
-    const creators = ['田中 太郎', '佐藤 花子', 'システム', '鈴木 一郎'];
-    const creatorIds = [1, 2, null, 3];
-    const avatars = [
-        'https://randomuser.me/api/portraits/men/5.jpg',
-        'https://randomuser.me/api/portraits/women/6.jpg',
-        undefined,
-        'https://randomuser.me/api/portraits/men/7.jpg'
-    ];
-    const creatorIndex = i % creators.length;
-    const creatorId = creatorIds[creatorIndex];
-    const creatorName = creators[creatorIndex];
-    const creatorAvatarUrl = avatars[creatorIndex];
-
-    const likes = Math.floor(Math.random() * 5000);
-    const dislikes = Math.floor(Math.random() * likes * 0.5); // Add random dislikes
-
-    return {
-      id: appId,
-      name: `アプリ ${appId}`,
-      description: description,
-      imageUrl: `https://placehold.jp/300x300.png?text=App+${appId}`,
-      likes: likes,
-      dislikes: dislikes,
-      category: category,
-      publishedDate: publishedDate,
-      usageCount: Math.floor(Math.random() * 100000),
-      requiresSubscription: appId % 10 === 0,
-      creatorId: creatorId,
-      creatorName: creatorName,
-      creatorAvatarUrl: creatorAvatarUrl,
-      positiveRatingRate: Math.random() * 0.6 + 0.4 // Generate random rate between 0.4 and 1.0
-    }
-}));
+// Notification Item Type (from notifications.vue or shared types)
+// TODO: Consider moving this to a shared types file
+interface NotificationItem {
+  id: number;
+  title: string;
+  content: string;
+  level: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'info' | 'success' | 'warning' | 'error';
+  startAt: string;
+  endAt: string | null;
+  isVisibleOnTop?: boolean;
+}
+// --------------------
 
 const router = useRouter();
+const { $api } = useNuxtApp();
+
+// --- State Refs ---
 const searchQuery = ref('');
-const selectedCategory = ref<string | null>('トレンド'); // デフォルトをトレンドに変更
+const selectedCategory = ref<string | null>('トレンド'); // デフォルトを「トレンド」に変更
 const currentPage = ref(1);
-const itemsPerPage = 40;
+const itemsPerPage = 20;
 
-// フィルタリングとソートを適用したアプリリスト
-const filteredAndSortedApps = computed(() => {
-  let result = apps.value;
+// App List State
+const appsData = ref<AppListResponse>({ data: [], total: 0 });
+const pending = ref(false);
+const error = ref<Error | null>(null);
 
-  // 検索フィルタ
+// Popular Categories State
+const popularCategories = ref<CategoryDto[]>([]);
+const categoriesLoading = ref(false);
+const categoriesError = ref<Error | null>(null);
+
+// --- Top Notification State ---
+const topNotifications = ref<NotificationItem[]>([]);
+const notificationsLoading = ref(false);
+const notificationsError = ref<string | null>(null);
+
+// Removed Popular Tags State
+// -----------------
+
+// --- API パラメータ算出 (タグフィルター削除) ---
+const apiParams = computed(() => {
+  const params: Record<string, any> = {
+    page: currentPage.value,
+    limit: itemsPerPage,
+  };
+
+  // --- Search Query ---
   if (searchQuery.value) {
-    const lowerCaseQuery = searchQuery.value.toLowerCase();
-    result = result.filter(app => 
-      app.name.toLowerCase().includes(lowerCaseQuery) ||
-      app.description.toLowerCase().includes(lowerCaseQuery)
-    );
+    params.name = searchQuery.value;
   }
 
-  // カテゴリーフィルタ (トレンド/最新/すべて 以外の場合)
-  if (selectedCategory.value && selectedCategory.value !== 'トレンド' && selectedCategory.value !== '最新') {
-    result = result.filter((app) => app.category === selectedCategory.value);
-  }
-
-  // ソートロジック: 最新が選択されている場合のみ日付順、それ以外は人気順
+  // --- Sorting --- 
   if (selectedCategory.value === '最新') {
-    result.sort((a, b) => b.publishedDate.getTime() - a.publishedDate.getTime());
-  } else {
-    result.sort((a, b) => b.likes - a.likes);
+    params.sortBy = 'createdAt';
+    params.sortOrder = 'desc';
+  } else if (selectedCategory.value === 'トレンド' || selectedCategory.value) {
+    // カテゴリ選択時は人気順 (usageCount)
+    params.sortBy = 'usageCount';
+    params.sortOrder = 'desc';
+  }
+  // カテゴリ未選択 (null) の場合は sortBy/sortOrder を指定しない
+
+  // --- Category Filter ---
+  if (selectedCategory.value && selectedCategory.value !== 'トレンド' && selectedCategory.value !== '最新') {
+      const category = popularCategories.value.find(c => c.name === selectedCategory.value);
+      if (category) {
+          params.categoryId = category.id;
+      } else {
+          console.warn(`Selected category '${selectedCategory.value}' not found. Filtering disabled.`);
+      }
   }
 
-  return result;
-});
+  // Removed Tag Filter logic
 
+  return params;
+});
+// --------------------------------------
+
+// Removed Tag Selection Logic
+// ------------------------
+
+// --- API データ取得関数 ---
+async function fetchApps() {
+  pending.value = true;
+  error.value = null;
+  try {
+    const response = await $api.get<AppListResponse>('/apps', { // /api プレフィックス確認
+      params: apiParams.value
+    });
+    appsData.value = response.data;
+  } catch (err) {
+    console.error('Failed to fetch apps:', err);
+    error.value = err instanceof Error ? err : new Error('Failed to fetch apps');
+    appsData.value = { data: [], total: 0 };
+  } finally {
+    pending.value = false;
+  }
+}
+
+async function fetchPopularCategories() {
+  categoriesLoading.value = true;
+  categoriesError.value = null;
+  try {
+    const response = await $api.get<CategoryDto[]>('/categories'); // /api プレフィックス確認
+    popularCategories.value = response.data;
+  } catch (err) {
+    console.error('Failed to fetch popular categories:', err);
+    categoriesError.value = err instanceof Error ? err : new Error('Failed to fetch popular categories');
+  } finally {
+    categoriesLoading.value = false;
+  }
+}
+
+// --- Fetch Top Notifications --- (New Function)
+async function fetchTopNotifications() {
+  notificationsLoading.value = true;
+  notificationsError.value = null;
+  try {
+    // Fetch up to 2 notifications marked for top display, sorted by start date desc
+    const response = await $api.get<{ data: NotificationItem[] }>('/notifications', {
+      params: {
+        isVisibleOnTop: true,
+        limit: 2,
+        sortBy: 'startAt', // Assuming API supports sorting
+        sortOrder: 'desc'
+      }
+    });
+    topNotifications.value = response.data.data || []; // Adjust based on actual API response structure
+  } catch (err) {
+    console.error('Failed to fetch top notifications:', err);
+    notificationsError.value = 'お知らせの読み込みに失敗しました。';
+    topNotifications.value = []; // Clear any potentially stale data
+  } finally {
+    notificationsLoading.value = false;
+  }
+}
+
+// --- ページネーション計算 (変更なし) ---
 const totalPages = computed(() => {
-  return Math.ceil(filteredAndSortedApps.value.length / itemsPerPage);
+  return Math.ceil(appsData.value.total / itemsPerPage);
 });
+// --------------------------
 
-const paginatedApps = computed(() => {
-  if (currentPage.value > totalPages.value && totalPages.value > 0) {
-      currentPage.value = 1;
-  } else if (totalPages.value === 0) {
-      currentPage.value = 1;
+// --- Watchers ---
+watch(apiParams, fetchApps, { deep: true, immediate: false }); 
+watch(popularCategories, (newCategories) => {
+  // If the currently selected category (which is not '最新' or 'トレンド') 
+  // is no longer in the popular list, reset selection to 'トレンド'.
+  if (selectedCategory.value && selectedCategory.value !== 'トレンド' && selectedCategory.value !== '最新') {
+    if (!newCategories.some(c => c.name === selectedCategory.value)) {
+      console.warn(`Previously selected category '${selectedCategory.value}' no longer exists. Resetting to 'トレンド'.`);
+      selectedCategory.value = 'トレンド'; // Reset to 'トレンド'
+    }
   }
-
-  const start = (currentPage.value - 1) * itemsPerPage;
-  const end = start + itemsPerPage;
-  return filteredAndSortedApps.value.slice(start, end);
 });
+// --------------
 
+// --- Initial Data Load ---
+onMounted(async () => {
+    // Fetch categories, apps, and top notifications in parallel
+    await Promise.all([
+        fetchPopularCategories(),
+        fetchTopNotifications(), // Add fetching notifications
+        // Removed fetchPopularTags(),
+        fetchApps()
+    ]);
+});
+// -------------------------
+
+// --- Navigation (変更なし) ---
 const goToAppDetail = (appId: number) => {
   router.push(`/apps/${appId}`);
 };
 
-const goToUserProfile = (creatorId: number) => {
-  router.push(`/users/${creatorId}`);
+const goToUserProfile = (creatorId?: number | null) => {
+  if (creatorId) {
+    router.push(`/users/${creatorId}`);
+  } else {
+     console.warn('Creator ID not available for navigation.');
+  }
 };
+// -----------------
+
+// --- 削除: ダミーデータ生成ロジック (省略) ---
+
 </script>
 
 <style scoped>

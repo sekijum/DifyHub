@@ -19,7 +19,7 @@
               </v-col>
 
               <!-- Price -->
-              <v-col cols="12" md="6">
+              <v-col cols="12">
                  <v-text-field
                   v-model.number="editablePlan.price"
                   label="月額料金 (円) *"
@@ -33,23 +33,23 @@
               </v-col>
 
               <!-- Status -->
-              <v-col cols="12" md="6">
+              <v-col cols="12">
                 <v-select
                   v-model="editablePlan.status"
-                  :items="statusOptions"
-                  item-title="title"
-                  item-value="value"
                   label="ステータス *"
-                  required
+                  :items="statusOptions"
+                  item-title="text"
+                  item-value="value"
                   variant="outlined"
                   density="compact"
                   :rules="[rules.required]"
                 ></v-select>
               </v-col>
             </v-row>
-
-            <!-- Dynamic Features List - Improved UI -->
-            <v-divider class="my-5"></v-divider>
+            
+            <v-divider class="my-4"></v-divider>
+            
+            <!-- Dynamic Features List -->
             <h6 class="text-h6 mb-3">機能リスト</h6>
             <div v-for="(feature, index) in featureInputs" :key="feature.id" class="feature-row mb-3">
                 <v-row align="center" no-gutters>
@@ -136,6 +136,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useNuxtApp } from 'nuxt/app';
 import PageTitle from '~/components/PageTitle.vue';
 
 definePageMeta({
@@ -144,40 +145,63 @@ definePageMeta({
 
 const route = useRoute();
 const router = useRouter();
-const planId = Number(route.params.id);
+const { $api } = useNuxtApp();
 
-// Interface for individual feature
+// プランIDは文字列（プラン名）
+const planId = route.params.id as string;
+
+// Interface for individual feature with ID for tracking
 interface PlanFeature {
+  id: number;
   text: string;
   type: 'included' | 'excluded';
 }
 
-// Type definition for Plan (updated)
+// Interface for plan data
 interface Plan {
-  id: number;
   name: string;
-  price: number;
-  features: PlanFeature[]; // Changed from credits
-  status: 'active' | 'inactive';
+  priceMonthly: number;
+  features: any; // JSONフィールド
+  status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Interface for feature inputs in the form (includes temporary id)
-interface PlanFeatureInput extends PlanFeature {
-  id: number;
+// Interface for the plan update payload
+interface UpdatePlanPayload {
+  name?: string;
+  price?: number;
+  status?: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
+  features?: string[];
 }
+
+// Status options
+const statusOptions = [
+  { text: '有効', value: 'ACTIVE' },
+  { text: '非公開', value: 'PRIVATE' },
+  { text: '停止', value: 'SUSPENDED' }
+];
 
 // --- Form and State ---
 const editForm = ref<any>(null);
-const editablePlan = reactive<Partial<Omit<Plan, 'features'>>>({}); // Exclude features initially
-const featureInputs = ref<PlanFeatureInput[]>([]);// State for dynamic feature inputs
+const loading = ref(false);
 const isSaving = ref(false);
 const snackbar = reactive({ show: false, text: '', color: 'success' });
+const error = ref<string | null>(null);
 
-// Options for status select
-const statusOptions = ref([
-    { title: '有効', value: 'active' },
-    { title: '無効', value: 'inactive' },
-]);
+// 編集可能なプラン情報
+const editablePlan = reactive<{
+  name: string;
+  price: number;
+  status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
+}>({
+  name: '',
+  price: 0,
+  status: 'ACTIVE'
+});
+
+// State for dynamic feature inputs
+const featureInputs = ref<PlanFeature[]>([]);
 
 // --- Validation Rules ---
 const rules = {
@@ -185,76 +209,63 @@ const rules = {
   nonNegative: (value: number) => value >= 0 || '0以上の数値を入力してください。',
 };
 
-// --- Fetch Plan Data (Simulation - Updated with Features) ---
-const fetchPlanData = (id: number): Plan | null => {
-    // Simulate finding plan data with features
-    const samplePlans: Plan[] = [
-      {
-        id: 1,
-        name: 'Free',
-        price: 0,
-        status: 'active',
-        features: [
-          { text: '基本的なアプリ機能', type: 'included' },
-          { text: '月 10 件までのアプリ作成', type: 'included' },
-          { text: 'コミュニティサポート', type: 'excluded' },
-        ],
-      },
-      {
-        id: 3,
-        name: 'Plus',
-        price: 1480,
-        status: 'active',
-        features: [
-          { text: '基本的なアプリ機能', type: 'included' },
-          { text: '月 50 件までのアプリ作成', type: 'included' },
-          { text: 'コミュニティサポート', type: 'included' },
-          { text: '優先メールサポート', type: 'excluded' },
-        ],
-      },
-      {
-        id: 2,
-        name: 'Pro',
-        price: 2980,
-        status: 'active',
-        features: [
-          { text: 'すべてのアプリ機能', type: 'included' },
-          { text: '無制限のアプリ作成', type: 'included' },
-          { text: '優先メールサポート', type: 'included' },
-          { text: '高度な分析機能', type: 'included' },
-        ],
-      },
-    ];
-    const found = samplePlans.find(p => p.id === id);
-    return found || null;
-}
-
-onMounted(() => {
-  // TODO: Replace this with actual API call to fetch plan data by planId
-  console.log(`Fetching data for plan ID: ${planId}`);
-  const existingPlan = fetchPlanData(planId);
-
-  if (existingPlan) {
-    // Assign basic info
-    editablePlan.name = existingPlan.name;
-    editablePlan.price = existingPlan.price;
-    editablePlan.status = existingPlan.status;
-    // Initialize featureInputs from existing features, adding a temporary id
-    featureInputs.value = existingPlan.features.map((feature, index) => ({
-        ...feature,
-        id: Date.now() + index // Ensure unique ID for v-for key
-    }));
-    // If no features exist, add a default empty one
-    if (featureInputs.value.length === 0) {
-        addFeature();
+// プランデータ取得
+const fetchPlanData = async () => {
+  loading.value = true;
+  error.value = null;
+  
+  try {
+    const response = await $api.get(`/admin/plans/${encodeURIComponent(planId)}`);
+    const plan = response.data;
+    
+    // 基本情報設定
+    editablePlan.name = plan.name;
+    editablePlan.price = plan.priceMonthly;
+    editablePlan.status = plan.status || 'ACTIVE';
+    
+    // 追加機能リスト設定
+    const features = plan.features || {};
+    const additionalFeatures = features.additionalFeatures || [];
+    if (additionalFeatures.length > 0) {
+      featureInputs.value = additionalFeatures.map((feature: string, index: number) => {
+        // 「+機能名」または「-機能名」の形式から解析
+        let type: 'included' | 'excluded' = 'included';
+        let text = feature;
+        
+        if (feature.startsWith('+')) {
+          type = 'included';
+          text = feature.substring(1);
+        } else if (feature.startsWith('-')) {
+          type = 'excluded';
+          text = feature.substring(1);
+        }
+        
+        return {
+          id: Date.now() + index,
+          text,
+          type
+        };
+      });
+    } else {
+      // 一つ空のアイテムを追加
+      featureInputs.value = [{ id: Date.now(), text: '', type: 'included' }];
     }
-  } else {
-    console.error(`Plan with ID ${planId} not found.`);
-    snackbar.text = 'プランが見つかりません。';
+  } catch (err: any) {
+    console.error(`プラン取得エラー:`, err);
+    error.value = err.response?.data?.message || 'プランの取得中にエラーが発生しました';
+    snackbar.text = error.value || 'プランの取得中にエラーが発生しました';
     snackbar.color = 'error';
     snackbar.show = true;
+    
+    // 一覧ページに戻る
     setTimeout(() => router.push('/admin/plans'), 2000);
+  } finally {
+    loading.value = false;
   }
+};
+
+onMounted(() => {
+  fetchPlanData();
 });
 
 // --- Feature Management Actions ---
@@ -281,38 +292,47 @@ const savePlan = async () => {
   const featuresValid = featureInputs.value.every(f => f.text.trim() !== '');
 
   if (!valid || !featuresValid) {
-      if (!featuresValid) {
-          snackbar.text = '機能リストのテキストを入力してください。';
-          snackbar.color = 'warning';
-          snackbar.show = true;
-      }
-      return; // Stop if form or features are invalid
+    if (!featuresValid) {
+      snackbar.text = '機能リストのテキストを入力してください。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    } else {
+      snackbar.text = '入力内容に問題があります。確認してください。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    }
+    return;
   }
 
   isSaving.value = true;
 
-  // Construct the payload including the updated features
-  const payload: Partial<Plan> = {
-    ...editablePlan,
-    id: planId, // Ensure ID is included
-    // Map featureInputs back to the PlanFeature structure
-    features: featureInputs.value.map(({ id, ...rest }) => rest),
-  };
+  // APIに送信するデータを準備
+  const updateData: UpdatePlanPayload = {};
+
+  // 変更があるフィールドのみAPIに送信
+  if (editablePlan.name !== planId) {
+    updateData.name = editablePlan.name;
+  }
+
+  updateData.price = editablePlan.price;
+  updateData.status = editablePlan.status;
+  
+  // 機能リストは文字列配列としてサーバーに送信
+  updateData.features = featureInputs.value
+    .filter(f => f.text.trim() !== '')
+    .map(feature => `${feature.type === 'included' ? '+' : '-'}${feature.text}`)
 
   try {
-    // --- Placeholder for Update Logic ---
-    console.log('Saving plan data (simulation):', payload);
-    // TODO: Replace with actual API call (e.g., PUT /api/plans/{id})
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate save
-
+    await $api.patch(`/admin/plans/${encodeURIComponent(planId)}`, updateData);
+    
     snackbar.text = 'プラン情報を保存しました。';
     snackbar.color = 'success';
     snackbar.show = true;
+    
     setTimeout(() => router.push('/admin/plans'), 1500); // Redirect after delay
-
-  } catch (error) {
-    console.error("Error during plan save simulation:", error);
-    snackbar.text = '保存中にエラーが発生しました。';
+  } catch (err: any) {
+    console.error("プラン更新エラー:", err);
+    snackbar.text = err.response?.data?.message || '保存中にエラーが発生しました。';
     snackbar.color = 'error';
     snackbar.show = true;
   } finally {

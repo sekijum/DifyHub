@@ -1,17 +1,16 @@
 <template>
   <v-card class="d-flex flex-column fill-height">
     <div style="position: relative;" class="flex-grow-0">
-      <!-- Rating Bar -->
+      <!-- Rating Bar (Using positiveRatingRate) -->
       <v-progress-linear
-        v-if="app.likes !== undefined && app.dislikes !== undefined && (app.likes + app.dislikes > 0)"
-        :model-value="app.likes"
-        :max="app.likes + app.dislikes"
-        :buffer-value="app.likes + app.dislikes"
-        color="blue"
-        buffer-color="red-darken-2"
-        :buffer-opacity="1"
+        v-if="positiveRatingRate !== null" 
+        :model-value="positiveRatingRate * 100" 
+        :max="100" 
+        color="blue" 
         height="3"
         rounded
+        bg-color="red-darken-2" 
+        bg-opacity="1" 
         style="position: absolute; top: 0; left: 0; width: 100%; z-index: 1;"
       ></v-progress-linear>
       <v-img
@@ -33,10 +32,20 @@
       </v-chip>
     </div>
     <div class="pa-2 d-flex flex-column flex-grow-1" style="position: relative;">
-
+        <!-- ★ Category Chip -->
+        <v-chip 
+          v-if="app.category?.name"
+          size="x-small"
+          color="secondary"
+          variant="tonal"
+          class="mb-1 mr-1 align-self-start" 
+          style="max-width: 90%;" 
+        >
+          <span class="text-truncate">{{ app.category.name }}</span>
+        </v-chip>
         <v-card-title
           @click="emitTitleClick"
-          style="cursor: pointer; padding: 0; line-height: 1.3; padding-right: 30px;" 
+          style="cursor: pointer; padding: 0; line-height: 1.3; padding-right: 30px;"
           class="text-subtitle-1 font-weight-bold text-truncate mb-1 flex-grow-0"
         >
           {{ app.name }}
@@ -87,8 +96,8 @@ interface App {
   requiresSubscription: boolean;
   creatorId?: number | null;
   creatorName?: string;
-  creatorAvatarUrl?: string;
-  positiveRatingRate?: number;
+  creatorAvatarUrl?: string | null;
+  category?: { id: number; name: string } | null;
 }
 
 const props = defineProps({
@@ -116,6 +125,24 @@ const truncatedDescription = computed(() => {
     return desc.substring(0, 150) + '...';
   }
   return desc;
+});
+
+// ★ Add computed property for positive rating rate
+const positiveRatingRate = computed<number | null>(() => {
+  const likes = props.app.likes;
+  const dislikes = props.app.dislikes ?? 0; // Default dislikes to 0 if undefined
+
+  // Ensure both are valid numbers
+  if (typeof likes !== 'number' || typeof dislikes !== 'number') {
+    return null; // Cannot calculate if values are not numbers
+  }
+
+  const total = likes + dislikes;
+  if (total === 0) {
+    return null; // Avoid division by zero and show nothing if no ratings
+  }
+  
+  return likes / total; // Returns value between 0 and 1
 });
 
 </script>

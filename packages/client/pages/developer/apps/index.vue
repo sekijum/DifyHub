@@ -40,7 +40,7 @@
             <!-- Data Table -->
             <v-data-table
               :headers="headers"
-              :items="filteredApps" 
+              :items="apps" 
               :items-per-page="itemsPerPage"
               @update:items-per-page="updateItemsPerPage($event)"
               :sort-by="sortBy"
@@ -62,17 +62,45 @@
               <template v-slot:item.usageCount="{ item }">
                 {{ item.usageCount?.toLocaleString() ?? 0 }}
               </template>
-              <template v-slot:item.positiveRatingRate="{ item }">
-                 {{ calculatePositiveRatingRate(item.likes, item.usageCount) }}
+              <template v-slot:item.likeRatio="{ item }">
+                 {{ item.likeRatio ? `${item.likeRatio}%` : '-' }}
+              </template>
+              <template v-slot:item.bookmarkCount="{ item }">
+                {{ item.bookmarkCount?.toLocaleString() ?? 0 }}
+              </template>
+              <template v-slot:item.createdAt="{ item }">
+                {{ formatDate(item.createdAt, { format: 'YYYY/MM/DD HH:mm' }) }}
               </template>
                <template v-slot:item.actions="{ item }">
-                <v-icon small class="mr-2" @click="goToEditPage(item)">mdi-pencil</v-icon>
-                <v-icon small @click="openDeleteDialog(item)">mdi-delete</v-icon>
+                <v-icon 
+                  small 
+                  class="mr-2" 
+                  @click="goToEditPage(item)" 
+                  :class="{ 'text-grey': isEditDeleteDisabled(item) }"
+                >
+                  mdi-pencil
+                </v-icon>
+                <v-icon 
+                  small 
+                  @click="openDeleteDialog(item)" 
+                  :class="{ 'text-grey': isEditDeleteDisabled(item) }"
+                >
+                  mdi-delete
+                </v-icon>
               </template>
                <template v-slot:no-data>
                   あなたが作成したアプリが見つかりません。
                </template>
             </v-data-table>
+  
+            <!-- Pagination -->
+            <div class="d-flex justify-center pt-2 pb-2">
+              <v-pagination
+                v-model="page"
+                :length="Math.ceil(totalApps / itemsPerPage)"
+                :total-visible="7"
+              ></v-pagination>
+            </div>
           </v-card>
         </v-col>
       </v-row>
@@ -87,15 +115,35 @@
         @confirm="confirmDeleteApp"
       />
   
+      <!-- トースト通知 -->
+      <v-snackbar
+        v-model="toast.show"
+        :color="toast.color"
+        :timeout="toast.timeout"
+        location="top"
+      >
+        {{ toast.message }}
+        <template v-slot:actions>
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            @click="toast.show = false"
+          ></v-btn>
+        </template>
+      </v-snackbar>
     </v-container>
   </template>
   
   <script setup lang="ts">
   import { ref, computed, watch, onMounted } from 'vue';
   import { useRouter, useRoute } from 'vue-router';
+  import { useNuxtApp } from '#app';
   import type { VDataTable } from 'vuetify/components';
   import PageTitle from '~/components/PageTitle.vue';
   import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
+  import { AppStatus } from '~/types/app';
+  import type { App, PaginatedAppsResult } from '~/types/app';
+  import { formatDate } from '~/plugins/dayjs';
   
   definePageMeta({
     layout: 'developer',
@@ -104,15 +152,47 @@
   const router = useRouter();
   const route = useRoute();
   
+  // トースト通知用の状態
+  const toast = ref({
+    show: false,
+    message: '',
+    color: 'success',
+    timeout: 3000,
+  });
+  
+  // 成功メッセージを表示
+  const showSuccessToast = (message: string, timeout?: number) => {
+    toast.value = {
+      show: true,
+      message,
+      color: 'success',
+      timeout: timeout || 3000,
+    };
+  };
+  
+  // エラーメッセージを表示
+  const showErrorToast = (message: string, timeout?: number) => {
+    toast.value = {
+      show: true,
+      message,
+      color: 'error',
+      timeout: timeout || 3000,
+    };
+  };
+  
   type SortItem = { key: string; order: 'asc' | 'desc' };
   
-  // Initialize state from route query parameters
+  // ページネーション状態
+  const page = ref(Number(route.query.page) || 1);
+  const totalApps = ref(0);
+  
+  // 検索とフィルター状態
   const search = ref(route.query.q as string || '');
   const selectedStatus = ref<string | null>(route.query.status as string || null);
   const itemsPerPage = ref(Number(route.query.limit) || 10);
   const initialSortBy: SortItem[] = route.query.sort_by
       ? [{ key: route.query.sort_by as string, order: (route.query.sort_order || 'asc') as 'asc' | 'desc' }]
-      : [{ key: 'createdAt', order: 'desc' }]; // Default sort by creation date desc
+      : [{ key: 'createdAt', order: 'desc' }]; 
   const sortBy = ref<SortItem[]>(initialSortBy);
   
   const loading = ref(false);
@@ -126,121 +206,63 @@
     { title: '名前', key: 'name', align: 'start', sortable: false },
     { title: 'ステータス', key: 'status', align: 'center', width: 120, sortable: false },
     { title: '使用回数', key: 'usageCount', align: 'end', width: 100 },
-    { title: '高評価率', key: 'positiveRatingRate', align: 'end', width: 100, sortable: false },
+    { title: '高評価率', key: 'likeRatio', align: 'end', width: 100, sortable: false },
+    { title: 'ブックマーク数', key: 'bookmarkCount', align: 'end', width: 120, sortable: false },
     { title: '作成日', key: 'createdAt', align: 'start', width: 150 },
     { title: 'アクション', key: 'actions', sortable: false, align: 'end', width: 100 },
   ];
   
-  // Options for app status select
+  // ステータス選択肢
   const statusOptions = ref([
-      { title: '公開', value: 'published' },
-      { title: '下書き', value: 'draft' },
-      { title: 'アーカイブ', value: 'archived' },
+      { title: '公開', value: AppStatus.PUBLISHED },
+      { title: '下書き', value: AppStatus.DRAFT },
+      { title: '非公開', value: AppStatus.PRIVATE },
+      { title: 'アーカイブ', value: AppStatus.ARCHIVED },
+      { title: '停止中', value: AppStatus.SUSPENDED },
   ]);
   
-  // Interface for app data (Adjusted for developer view)
-  interface App {
-    id: number;
-    name: string;
-    description: string;
-    thumbnailUrl?: string;
-    subImageUrls?: string[];
-    status: 'published' | 'draft' | 'archived';
-    isSubscriptionOnly: boolean;
-    appUrl?: string;
-    usageCount: number;
-    likes: number;
-    createdAt: string;
-  }
+  const apps = ref<App[]>([]);
   
-  // Generate sample app data (Simulating apps created by the logged-in developer)
-  const generateSampleApps = (count: number): App[] => {
-    const appsList: App[] = [];
-    const appNames = ['自作分析ツール', 'マイプロジェクト管理', '開発メモアプリ', '請求書シンプル作成', '個人Wikiシステム', 'イベント計画アプリ', 'ブログ作成エンジン', '自動化スクリプト集', '短縮URLメーカー', '画像コンバーター'];
-    const statuses: ('published' | 'draft' | 'archived')[] = ['published', 'published', 'draft', 'archived'];
-  
-    for (let i = 1; i <= count; i++) {
-      const name = `${appNames[Math.floor(Math.random() * appNames.length)]} #${i}`;
-      const description = `これは ${name} のサンプル説明文です。ログイン中の開発者が作成しました。`;
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const isSubscriptionOnly = Math.random() < 0.2;
-      const randomDay = Math.floor(Math.random() * 30) + 1;
-      const randomMonth = Math.floor(Math.random() * 12) + 1;
-      const createdAt = `2024-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`;
-      const thumbnailUrl = Math.random() > 0.2 ? `https://placehold.jp/80x80.png?text=DevApp+${i}` : undefined;
-      const appUrl = Math.random() < 0.7 ? `https://mydevapp.com/app/${i}` : undefined;
-      const usageCount = Math.floor(Math.random() * 50000);
-      const likes = Math.floor(usageCount * (Math.random() * 0.15 + 0.02)); // Likes are 2% to 17% of usage count
+  // アプリ一覧取得
+  const fetchApps = async () => {
+    loading.value = true;
+    
+    try {
+      // クエリパラメータの構築
+      const params = new URLSearchParams();
+      params.append('page', page.value.toString());
+      params.append('limit', itemsPerPage.value.toString());
       
-      const subImageUrls: string[] = [];
-      const numSubImages = Math.floor(Math.random() * 4);
-      for (let j = 0; j < numSubImages; j++) {
-          if (Math.random() > 0.3) {
-             subImageUrls.push(`https://placehold.jp/80x80.png?text=Sub+${i}-${j+1}`);
-          }
+      if (search.value) {
+        params.append('search', search.value);
       }
-  
-      appsList.push({
-        id: i,
-        name,
-        description,
-        thumbnailUrl,
-        subImageUrls,
-        status,
-        isSubscriptionOnly,
-        appUrl,
-        usageCount,
-        likes,
-        createdAt,
-      });
-    }
-    return appsList;
-  };
-  
-  // TODO: Replace with actual API call to fetch apps created by the logged-in developer
-  const apps = ref<App[]>(generateSampleApps(15)); // Generate 15 sample apps for the developer
-  
-  // Computed property to filter apps
-  const filteredApps = computed(() => {
-    // TODO: In a real scenario, filtering by creator ID should happen on the backend/API level
-    return apps.value.filter(app => {
-      const statusMatch = !selectedStatus.value || app.status === selectedStatus.value;
-      const searchMatch = !search.value ||
-                          app.name.toLowerCase().includes(search.value.toLowerCase()) ||
-                          app.description.toLowerCase().includes(search.value.toLowerCase());
-      return statusMatch && searchMatch;
-    });
-  });
-  
-  // Function to calculate like rate
-  const calculatePositiveRatingRate = (likes: number, usageCount: number): string => {
-      if (usageCount === 0) {
-          return '-'; // Avoid division by zero
+      if (selectedStatus.value) {
+        params.append('status', selectedStatus.value);
       }
-      const rate = (likes / usageCount) * 100;
-      return `${rate.toFixed(1)}%`;
-  };
-  
-  // Function to update URL query parameters
-  const updateQueryParameters = () => {
-    const query: Record<string, any> = {};
-    if (selectedStatus.value) query.status = selectedStatus.value;
-    if (itemsPerPage.value !== 10) query.limit = itemsPerPage.value;
-    if (search.value) query.q = search.value;
-  
-    const currentSort = sortBy.value[0];
-    if (currentSort && (currentSort.key !== 'createdAt' || currentSort.order !== 'desc')) { // Adjusted default sort
-       query.sort_by = currentSort.key;
-       query.sort_order = currentSort.order;
-    }
-  
-    if (JSON.stringify(query) !== JSON.stringify(route.query)) {
-        router.replace({ query });
+      
+      const currentSort = sortBy.value[0];
+      if (currentSort) {
+        params.append('sortBy', currentSort.key);
+        params.append('sortOrder', currentSort.order);
+      }
+      
+      const { $api } = useNuxtApp();
+      const response = await $api.get<PaginatedAppsResult>('/developer/apps', { params });
+      apps.value = response.data.data;
+      totalApps.value = response.data.total;
+    } catch (error) {
+      console.error('アプリ一覧の取得に失敗しました:', error);
+      showErrorToast('アプリ一覧の取得に失敗しました');
+      apps.value = [];
+    } finally {
+      loading.value = false;
     }
   };
   
-  // Watch filters and sorting
-  watch([selectedStatus, search, sortBy], updateQueryParameters, { deep: true });
+  // リスト更新関数
+  const refreshList = () => {
+    fetchApps();
+  };
   
   // Items per page options and handler
   const itemsPerPageOptions = [
@@ -259,46 +281,93 @@
     sortBy.value = newSortBy;
   };
   
+  // 編集・削除アイコンの無効化表示のみに使用
+  const isEditDeleteDisabled = (app: App) => {
+    return app.status === AppStatus.SUSPENDED;
+  };
+  
   // Status display helpers
-  const getStatusColor = (status: App['status']): string => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
-      case 'published': return 'green';
-      case 'draft': return 'orange';
-      case 'archived': return 'grey';
+      case AppStatus.PUBLISHED: return 'green';
+      case AppStatus.DRAFT: return 'orange';
+      case AppStatus.PRIVATE: return 'blue';
+      case AppStatus.ARCHIVED: return 'grey-lighten-1';
+      case AppStatus.SUSPENDED: return 'red';
       default: return 'grey';
     }
   };
   
-  const getStatusText = (status: App['status']): string => {
+  const getStatusText = (status: string): string => {
       const option = statusOptions.value.find(o => o.value === status);
       return option ? option.title : status;
   };
   
-  // Function to navigate to the edit page (developer path)
+  // クエリパラメータの更新
+  const updateQueryParameters = () => {
+    const query: Record<string, any> = {};
+    query.page = page.value;
+    if (selectedStatus.value) query.status = selectedStatus.value;
+    if (itemsPerPage.value !== 10) query.limit = itemsPerPage.value;
+    if (search.value) query.q = search.value;
+  
+    const currentSort = sortBy.value[0];
+    if (currentSort && (currentSort.key !== 'createdAt' || currentSort.order !== 'desc')) {
+       query.sort_by = currentSort.key;
+       query.sort_order = currentSort.order;
+    }
+  
+    if (JSON.stringify(query) !== JSON.stringify(route.query)) {
+        router.replace({ query });
+    }
+  };
+  
+  // 編集ページへの遷移 - すべての状態で遷移可能
   const goToEditPage = (app: App) => {
     router.push(`/developer/apps/${app.id}/edit`);
   };
   
-  // Function to navigate to the create page (developer path)
+  // Function to navigate to the create page
   const goToCreatePage = () => {
     router.push('/developer/apps/new');
   };
   
-  // Edit/Delete placeholders
+  // 削除処理 - 停止中は削除不可
   const openDeleteDialog = (app: App) => {
+    if (app.status === AppStatus.SUSPENDED) {
+      showErrorToast('停止中のアプリは削除できません');
+      return;
+    }
     appToDelete.value = app;
     isDeleteDialogOpen.value = true;
   };
   
-  const confirmDeleteApp = () => {
-    if (appToDelete.value) {
-      console.log('Deleting app:', appToDelete.value);
-      // TODO: Replace with actual API call specific to the developer
-      apps.value = apps.value.filter(a => a.id !== appToDelete.value!.id);
+  const confirmDeleteApp = async () => {
+    if (!appToDelete.value) return;
+    
+    try {
+      const { $api } = useNuxtApp();
+      await $api.delete(`/developer/apps/${appToDelete.value.id}`);
+      showSuccessToast('アプリを削除しました');
+      refreshList();
+    } catch (error) {
+      console.error('削除エラー:', error);
+      showErrorToast('アプリの削除に失敗しました');
+    } finally {
+      isDeleteDialogOpen.value = false;
       appToDelete.value = null;
     }
-    isDeleteDialogOpen.value = false;
   };
+  
+  // データの監視とフェッチ
+  watch([page, selectedStatus, search, sortBy], () => {
+    updateQueryParameters();
+    fetchApps();
+  }, { deep: true });
+  
+  onMounted(() => {
+    fetchApps();
+  });
   
   </script>
   

@@ -61,6 +61,38 @@
                   persistent-hint
                 ></v-text-field>
               </v-col>
+              <!-- Category -->
+              <v-col cols="12" md="6">
+                <v-select
+                  v-model="newApp.categoryId"
+                  :items="categories"
+                  item-title="name"
+                  item-value="id"
+                  label="カテゴリ *"
+                  required
+                  variant="outlined"
+                  density="compact"
+                  :rules="[rules.required]"
+                  :loading="loadingCategories"
+                ></v-select>
+              </v-col>
+              <!-- Tags -->
+              <v-col cols="12" md="6">
+                <v-combobox
+                  v-model="newApp.tags"
+                  :items="tags"
+                  label="タグ (複数選択可, Enterで追加)"
+                  multiple
+                  chips
+                  clearable
+                  closable-chips
+                  variant="outlined"
+                  density="compact"
+                  hint="既存のタグを選択するか、新しいタグを入力してEnterキーを押してください。"
+                  persistent-hint
+                  :loading="loadingTags"
+                ></v-combobox>
+              </v-col>
               <!-- Description -->
               <v-col cols="12">
                  <v-textarea
@@ -99,8 +131,6 @@
              <v-row>
                 <v-col cols="12">
                     <h6 class="text-subtitle-1 font-weight-regular mb-2">サムネイル画像</h6>
-                     <!-- DEBUG: Display thumbnailPreviewUrl value directly -->
-                    <!-- <p style="word-break: break-all;">Debug thumbnailPreviewUrl: {{ thumbnailPreviewUrl ? thumbnailPreviewUrl.substring(0, 100) + '...' : 'null' }}</p> -->
                     <v-file-input
                       v-model="thumbnailFile"
                       label="ファイルを選択 (推奨: 16:9)"
@@ -229,33 +259,47 @@
           <v-btn variant="text" @click="cancelCreate">
             キャンセル
           </v-btn>
-          <v-btn color="primary" variant="elevated" @click="createApp" :loading="isCreating">
+          <v-btn color="primary" variant="elevated" @click="createApp" :loading="isCreating" :disabled="isCreating">
             作成する
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-form>
-    <!-- Snackbar for feedback -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
-      {{ snackbar.text }}
+    <!-- トースト通知 -->
+    <v-snackbar
+      v-model="toast.show"
+      :color="toast.color"
+      :timeout="toast.timeout"
+      location="top"
+    >
+      {{ toast.message }}
       <template v-slot:actions>
-        <v-btn variant="text" @click="snackbar.show = false">閉じる</v-btn>
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          @click="toast.show = false"
+        ></v-btn>
       </template>
     </v-snackbar>
   </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed, nextTick } from 'vue';
+import { ref, reactive, watch, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useNuxtApp } from '#app';
 import PageTitle from '~/components/PageTitle.vue';
 import draggable from 'vuedraggable';
+import { useToast } from '@/composables/useToast';
+import type { Category } from '~/types/app';
+import { AppStatus } from '~/types/app';
 
 definePageMeta({
   layout: 'developer',
 });
 
 const router = useRouter();
+const { toast, showSuccessToast, showErrorToast } = useToast();
 
 // Constants for limits
 const MAX_SUB_IMAGES = 5;
@@ -266,32 +310,37 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 interface AppPayload {
   name: string;
   description?: string;
-  thumbnailUrl?: string;
-  subImageUrls?: string[];
-  status: 'published' | 'draft' | 'archived';
+  status: AppStatus;
   isSubscriptionOnly: boolean;
   appUrl?: string;
+  categoryId: number;
+  tags?: string[];
 }
+
+// --- カテゴリとタグのデータ ---
+const categories = ref<Category[]>([]);
+const tags = ref<string[]>([]);
+const loadingCategories = ref(false);
+const loadingTags = ref(false);
 
 // --- Form and State ---
 const createForm = ref<any>(null);
 const newApp = reactive<Partial<AppPayload>>({
     name: '',
     description: '',
-    status: 'draft',
-    thumbnailUrl: undefined,
-    subImageUrls: [],
+    status: AppStatus.DRAFT,
     isSubscriptionOnly: false,
     appUrl: '',
+    categoryId: undefined,
+    tags: [],
 });
 const isCreating = ref(false);
-const snackbar = reactive({ show: false, text: '', color: 'success' });
 
 // Status options
 const statusOptions = ref([
-    { title: '公開', value: 'published' },
-    { title: '下書き', value: 'draft' },
-    { title: 'アーカイブ', value: 'archived' },
+    { title: '公開', value: AppStatus.PUBLISHED },
+    { title: '下書き', value: AppStatus.DRAFT },
+    { title: '非公開', value: AppStatus.PRIVATE },
 ]);
 
 // --- State for File Inputs & Previews ---
@@ -319,14 +368,13 @@ const dragOptions = computed(() => ({
 
 // --- Validation Rules ---
 const rules = {
-  required: (value: string) => !!value || '必須項目です。',
+  required: (value: string | number) => !!value || '必須項目です。',
   imageSize: (files: File[] | File) => {
     const fileList = Array.isArray(files) ? files : (files ? [files] : []);
     if (!fileList || fileList.length === 0) return true;
 
     if (fileList.some(file => !file)) {
-        console.warn('Validation Rule: Undefined file detected in fileList.');
-        return '無効なファイルが選択されました。ご確認ください。';
+        return true;
     }
 
     const oversized = fileList.some(file => file.size > MAX_FILE_SIZE_BYTES);
@@ -337,83 +385,87 @@ const rules = {
   }
 };
 
+// --- カテゴリとタグの取得 ---
+const fetchCategories = async () => {
+  loadingCategories.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    const response = await $api.get('/categories');
+    categories.value = response.data;
+  } catch (error) {
+    console.error('カテゴリ取得エラー:', error);
+    showErrorToast('カテゴリの取得に失敗しました');
+  } finally {
+    loadingCategories.value = false;
+  }
+};
+
+const fetchTags = async () => {
+  loadingTags.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    const response = await $api.get('/tags');
+    tags.value = response.data.map((tag: any) => tag.name);
+  } catch (error) {
+    console.error('タグ取得エラー:', error);
+    showErrorToast('タグの取得に失敗しました');
+  } finally {
+    loadingTags.value = false;
+  }
+};
+
 // --- Image Preview Processing ---
 const readFileAsDataURL = (file: File): Promise<string | null> => {
-  console.log('[readFileAsDataURL] Reading file:', file?.name);
   return new Promise((resolve) => {
     if (!file) {
-        console.warn('readFileAsDataURL: Received undefined file.');
         resolve(null);
         return;
     }
     if (!file.type.startsWith('image/')) {
-      console.warn('Invalid file type selected:', file.type);
-      snackbar.text = '画像ファイルを選択してください。';
-      snackbar.color = 'warning';
-      snackbar.show = true;
+      showErrorToast('画像ファイルを選択してください。');
       resolve(null);
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-        console.log('[readFileAsDataURL] File read success.');
         resolve(e.target?.result as string);
     }
     reader.onerror = (e) => {
-      console.error("[readFileAsDataURL] FileReader error:", e);
+      console.error("FileReader error:", e);
       resolve(null);
     }
     reader.readAsDataURL(file);
   });
 }
 
-// --- Thumbnail Event Handler --- (Replaces watch, accepts any)
+// --- Thumbnail Event Handler ---
 const handleThumbnailChange = async (value: any) => {
-  console.log('[handleThumbnailChange] Triggered. Type:', typeof value, 'Value:', value);
-
-  // Check if the value is a File object
-  // Note: v-file-input (single) might emit File or potentially null/undefined on clear
-  // It might also emit File[] with one element.
   let file: File | null = null;
   if (value instanceof File) {
       file = value;
   } else if (Array.isArray(value) && value.length > 0 && value[0] instanceof File) {
-      // Handle case where it emits an array even for single selection
       file = value[0];
-      // Update the v-model ref if it differs (though event should align)
       if (thumbnailFile.value[0] !== file) {
           thumbnailFile.value = [file];
       }
   } else if (Array.isArray(value) && value.length === 0) {
-      // Handle clear event if it emits empty array
-      console.log('[handleThumbnailChange] Detected clear via empty array.');
       file = null;
-      if (thumbnailFile.value.length > 0) thumbnailFile.value = []; // Sync v-model
+      if (thumbnailFile.value.length > 0) thumbnailFile.value = [];
   } else if (value === null || value === undefined) {
-       // Handle clear event if it emits null/undefined
-       console.log('[handleThumbnailChange] Detected clear via null/undefined.');
        file = null;
-       if (thumbnailFile.value.length > 0) thumbnailFile.value = []; // Sync v-model
+       if (thumbnailFile.value.length > 0) thumbnailFile.value = [];
   }
 
   if (file) {
-    console.log('[handleThumbnailChange] Processing file:', file.name);
-    // Size validation (using the extracted file)
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      console.log('[handleThumbnailChange] File size exceeded.');
       thumbnailPreviewUrl.value = null;
-      thumbnailFile.value = []; // Clear the model on validation failure
+      thumbnailFile.value = [];
+      showErrorToast(`画像サイズは${MAX_FILE_SIZE_MB}MB以下にしてください。`);
       return;
     }
-    // Read file
     const result = await readFileAsDataURL(file);
-    console.log('[handleThumbnailChange] readFileAsDataURL result:', result ? 'Data URL received' : null);
     thumbnailPreviewUrl.value = result;
-    console.log(`[handleThumbnailChange] thumbnailPreviewUrl set to: ${thumbnailPreviewUrl.value ? 'Data URL' : null}`);
-
   } else {
-    // Handle cases where no valid file was passed (clear)
-    console.log('[handleThumbnailChange] No valid file detected, clearing preview.');
     thumbnailPreviewUrl.value = null;
   }
 };
@@ -428,9 +480,7 @@ watch(subImageFiles, async (newFiles) => {
   );
 
   if (subImagePreviews.value.length + filesToAdd.length > MAX_SUB_IMAGES) {
-      snackbar.text = `サブ画像は最大${MAX_SUB_IMAGES}枚までです。`;
-      snackbar.color = 'warning';
-      snackbar.show = true;
+      showErrorToast(`サブ画像は最大${MAX_SUB_IMAGES}枚までです。`);
       try {
           const allowedToAddCount = MAX_SUB_IMAGES - subImagePreviews.value.length;
           const keptFiles = filesToAdd.slice(0, allowedToAddCount);
@@ -447,13 +497,10 @@ watch(subImageFiles, async (newFiles) => {
 
   for (const file of filesToAdd) {
     if (!file) {
-        console.warn('subImageFiles watcher: Undefined file detected in filesToAdd.');
         continue;
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
-       snackbar.text = `画像サイズは${MAX_FILE_SIZE_MB}MB以下にしてください。`;
-       snackbar.color = 'warning';
-       snackbar.show = true;
+       showErrorToast(`画像サイズは${MAX_FILE_SIZE_MB}MB以下にしてください。`);
        subImageFiles.value = subImageFiles.value.filter(f => f !== file);
        continue;
     }
@@ -493,63 +540,85 @@ const createApp = async () => {
 
   isCreating.value = true;
 
-  const uploadSingleFile = async (file: File | undefined): Promise<string | undefined> => {
-    if (!file) return undefined;
-    console.log(`Uploading ${file.name}...`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const newUrl = `https://placehold.jp/160x90.png?text=Thumb+${Date.now()}`;
-    console.log(`Simulated upload complete. New URL: ${newUrl}`);
-    return newUrl;
-  }
-  const uploadMultipleFiles = async (files: File[]): Promise<string[]> => {
-      const uploadedUrls: string[] = [];
-      for (const file of files) {
-          if (!file) continue;
-          console.log(`Uploading new sub-image: ${file.name}...`);
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const newUrl = `https://placehold.jp/128x72.png?text=Sub+${Date.now()}`;
-          console.log(`Simulated upload complete. New URL: ${newUrl}`);
-          uploadedUrls.push(newUrl);
-      }
-      return uploadedUrls;
-  }
-
   try {
-    const thumbnailUrl = await uploadSingleFile(thumbnailFile.value[0]);
+    // 必須フィールドの検証
+    if (!newApp.name || !newApp.categoryId || !newApp.status) {
+      showErrorToast('必須項目を入力してください');
+      return;
+    }
 
-    const filesToUpload: File[] = subImagePreviews.value
-      .filter(p => p.isNew && p.file)
-      .map(p => p.file as File);
+    // フォームデータを作成
+    const formData = new FormData();
+    
+    // 基本情報のフィールド (必須)
+    formData.append('name', newApp.name);
+    formData.append('status', newApp.status);
+    formData.append('categoryId', String(newApp.categoryId));
+    formData.append('isSubscriptionOnly', String(!!newApp.isSubscriptionOnly));
+    
+    // appUrlは必須だがフォームに入力がない場合、デフォルト値を設定
+    formData.append('appUrl', newApp.appUrl || 'https://example.com');
+    
+    // 任意フィールド
+    if (newApp.description) formData.append('description', newApp.description);
+    
+    // タグ
+    if (newApp.tags && newApp.tags.length > 0) {
+      newApp.tags.forEach((tag, index) => {
+        formData.append(`tags[${index}]`, tag);
+      });
+    }
+    
+    // サムネイル画像
+    if (thumbnailFile.value && thumbnailFile.value.length > 0) {
+      formData.append('thumbnail', thumbnailFile.value[0]);
+    }
+    
+    // サブ画像（順序を保持）
+    if (subImagePreviews.value.length > 0) {
+      subImagePreviews.value.forEach((preview, index) => {
+        if (preview.file) {
+          formData.append(`subImages[${index}]`, preview.file);
+        }
+      });
+    }
 
-    const orderedSubImageUrls = await uploadMultipleFiles(filesToUpload);
+    // デバッグ用：フォームデータの内容を確認
+    console.log('送信するデータ:');
+    for (const pair of formData.entries()) {
+      console.log(pair[0], pair[1]);
+    }
 
-    const payload: AppPayload = {
-      name: newApp.name!,
-      description: newApp.description || undefined,
-      status: newApp.status!,
-      thumbnailUrl: thumbnailUrl,
-      subImageUrls: orderedSubImageUrls,
-      isSubscriptionOnly: !!newApp.isSubscriptionOnly,
-      appUrl: newApp.appUrl || undefined,
-    };
+    const { $api } = useNuxtApp();
+    const response = await $api.post('/developer/apps', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
 
-    console.log('Creating app with data (simulation):', payload);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    showSuccessToast('アプリを新規作成しました');
+    router.push('/developer/apps');
 
-    snackbar.text = 'アプリを新規作成しました。';
-    snackbar.color = 'success';
-    snackbar.show = true;
-    setTimeout(() => router.push('/developer/apps'), 1500);
-
-  } catch (error) {
-    console.error("Error during app creation simulation:", error);
-    snackbar.text = '作成中にエラーが発生しました。';
-    snackbar.color = 'error';
-    snackbar.show = true;
+  } catch (error: any) {
+    console.error("アプリ作成エラー:", error);
+    if (error.response && error.response.data && error.response.data.message) {
+      const messages = Array.isArray(error.response.data.message) 
+        ? error.response.data.message.join('\n') 
+        : error.response.data.message;
+      showErrorToast(`作成失敗: ${messages}`);
+    } else {
+      showErrorToast('アプリの作成に失敗しました');
+    }
   } finally {
     isCreating.value = false;
   }
 };
+
+// 初期データ読み込み
+onMounted(() => {
+  fetchCategories();
+  fetchTags();
+});
 
 </script>
 

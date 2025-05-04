@@ -1,5 +1,5 @@
 <template>
-  <v-container v-if="app">
+  <v-container v-if="app && !loading && !error">
     <v-row>
       <!-- App Details -->
       <v-col cols="12">
@@ -8,28 +8,50 @@
               <div class="d-flex justify-space-between align-start">
                   <div>
                       <!-- Top Section: Category and Title -->
-                      <v-chip size="small" color="secondary" variant="flat" class="mb-2">{{ app.category }}</v-chip>
+                      <v-chip v-if="app.category" size="small" color="secondary" variant="flat" class="mb-2">{{ app.category.name }}</v-chip>
+                      <v-chip
+                          v-if="app.isSubscriptionLimited"
+                          size="small"
+                          color="warning"
+                          variant="flat"
+                          class="font-weight-medium mb-2 ml-2" 
+                      >
+                          サブスクリプション限定
+                      </v-chip>
                       <v-card-title class="text-h4 font-weight-bold pa-0 mb-3">
                           {{ app.name }}
                       </v-card-title>
 
-                      <!-- Developer Info - Wrapped in NuxtLink -->
-                      <nuxt-link :to="`/users/${app.developerId}`" class="text-decoration-none text-high-emphasis d-inline-block mb-4">
-                          <div class="d-flex align-center"> 
+                      <!-- Developer Info - Use top-level properties -->
+                      <!-- ★ v-if uses app.creatorName -->
+                      <nuxt-link v-if="app.creatorName" :to="`/users/${app.creatorId}`" class="text-decoration-none text-high-emphasis d-inline-block mb-4">
+                          <div class="d-flex align-center">
                             <v-avatar size="32" class="mr-2">
-                              <v-img :src="app.developerAvatarUrl" :alt="`${app.developerName} Avatar`"></v-img>
+                              <!-- ★ Use app.creatorAvatarUrl with fallback -->
+                              <v-img :src="app.creatorAvatarUrl || 'https://placehold.jp/40x40.png?text=No+Avatar'" :alt="`${app.creatorName} Avatar`"></v-img>
                             </v-avatar>
-                            <span class="text-subtitle-1 font-weight-medium">{{ app.developerName }}</span>
+                            <!-- ★ Display app.creatorName -->
+                            <span class="text-subtitle-1 font-weight-medium">{{ app.creatorName }}</span>
                           </div>
                       </nuxt-link>
+                      <!-- ★ Fallback still uses creatorId if name is missing -->
+                      <div v-else-if="app.creatorId" class="d-inline-block mb-4">
+                          <div class="d-flex align-center">
+                              <v-avatar size="32" class="mr-2">
+                                  <v-img src="https://placehold.jp/40x40.png?text=No+Avatar" :alt="`開発者 ${app.creatorId} Avatar`"></v-img>
+                              </v-avatar>
+                              <span class="text-subtitle-1 font-weight-medium">開発者 {{ app.creatorId }}</span>
+                          </div>
+                      </div>
                   </div>
                   <div class="d-flex align-center" style="margin-top: 4px;">
-                      <!-- Bookmark Button Moved Here -->
+                      <!-- Bookmark Button (Always visible) -->
                       <v-tooltip location="bottom" :text="isBookmarked ? 'ブックマークを編集' : 'ブックマークに追加'">
                         <template v-slot:activator="{ props: tooltipProps }">
                           <v-btn
                             v-bind="tooltipProps"
-                            :color="isBookmarked ? 'primary' : 'on-surface-variant'" 
+                            :loading="bookmarkLoading" 
+                            :color="isBookmarked ? 'primary' : 'on-surface-variant'"
                             icon
                             size="small"
                             @click="openBookmarkDialog" 
@@ -41,7 +63,7 @@
                       </v-tooltip>
                       <!-- Subscription Label -->
                       <v-chip
-                          v-if="app.requiresSubscription"
+                          v-if="app.isSubscriptionLimited"
                           size="small"
                           color="warning"
                           variant="flat"
@@ -60,58 +82,60 @@
               <v-divider class="mb-4"></v-divider>
 
               <!-- Meta Info Area Below Description -->
-              <!-- Like/Dislike Buttons -->
+              <!-- Like/Dislike Buttons (Always visible) -->
               <div class="d-flex align-center mb-3">
                    <!-- Like Button -->
-                   <v-tooltip location="bottom" text="いいね！">
+                   <v-tooltip location="bottom" text="高評価">
                       <template v-slot:activator="{ props: tooltipProps }">
                            <v-btn
                               v-bind="tooltipProps"
-                              :variant="isLiked ? 'outlined' : 'text'" 
+                              :loading="ratingLoading"
+                              :variant="isLiked ? 'outlined' : 'text'"
                               :color="isLiked ? 'primary' : 'on-surface-variant'"
-                              @click="likeApp"
+                              @click="likeApp" 
                               icon 
                               size="small"
-                              class="mr-1"
+                              class="mr-1 like-dislike-btn" 
                            >
                               <v-icon :icon="isLiked ? 'mdi-thumb-up' : 'mdi-thumb-up-outline'"
                               ></v-icon>
                            </v-btn>
                       </template>
                   </v-tooltip>
-                  <span class="text-body-2 mr-2 font-weight-medium">{{ formatLikes(app.likes) }}</span>
+                  <span class="text-body-2 mr-2 font-weight-medium">{{ formatLikes(app.likesCount) }}</span>
 
                    <!-- Dislike Button -->
-                   <v-tooltip location="bottom" text="よくないね">
+                   <v-tooltip location="bottom" text="低評価">
                       <template v-slot:activator="{ props: tooltipProps }">
                            <v-btn
                               v-bind="tooltipProps"
-                              :variant="isDisliked ? 'outlined' : 'text'" 
+                              :loading="ratingLoading"
+                              :variant="isDisliked ? 'outlined' : 'text'"
                               :color="isDisliked ? 'primary' : 'on-surface-variant'"
-                              @click="dislikeApp"
+                              @click="dislikeApp" 
                               icon
                               size="small"
-                              class="mr-1"
+                              class="mr-1 like-dislike-btn" 
                            >
                               <v-icon :icon="isDisliked ? 'mdi-thumb-down' : 'mdi-thumb-down-outline'"
                               ></v-icon>
                            </v-btn>
                       </template>
                   </v-tooltip>
-                  <span v-if="app.dislikes > 0" class="text-caption mr-2">{{ formatLikes(app.dislikes) }}</span> 
+                  <span class="text-caption mr-2">{{ formatLikes(app.dislikesCount) }}</span> 
               </div>
 
               <!-- Tags -->
-              <div class="d-flex flex-wrap mb-4">
+              <div class="d-flex flex-wrap mb-4" v-if="app.tags && app.tags.length > 0">
                    <v-chip
                      v-for="tag in app.tags"
-                     :key="tag"
+                     :key="tag.id"
                      size="x-small" 
                      color="primary"
                      variant="outlined"
                      class="mr-1 mb-1"
                    >
-                     {{ tag }}
+                     {{ tag.name }}
                    </v-chip>
                </div>
                
@@ -122,25 +146,41 @@
                    </span>
                    <span class="d-none d-sm-inline mx-2">|</span> 
                    <span class="d-block d-sm-inline-flex align-center mb-1 mb-sm-0">
-                       公開日: {{ formatDate(app.publishedDate) }}
+                       公開日: {{ formatDate(app.createdAt) }}
                    </span>
                     <span class="d-none d-sm-inline mx-2">|</span> 
                    <span class="d-block d-sm-inline-flex align-center">
-                       最終更新日: {{ formatDate(app.lastUpdatedDate) }}
+                       最終更新日: {{ formatDate(app.updatedAt) }}
                    </span>
                </div>
 
                <!-- Use App Button -->
                <v-btn 
+                 :loading="useAppLoading"
+                 :disabled="isUseAppButtonDisabled" 
                  color="primary"
                  variant="flat"
                  size="large"
                  class="mt-4" 
-                 @click="useApp"
+                 @click="useApp" 
                  block 
                >
                  アプリを使う
                </v-btn>
+               <!-- Subscription required message -->
+               <v-alert
+                 v-if="isDisabledDueToSubscription"
+                 type="warning"
+                 density="compact"
+                 variant="tonal"
+                 class="mt-2"
+                 border="start"
+               >
+                 このアプリを使用するには、有料プランへの登録が必要です。
+                 <nuxt-link to="/plans" class="text-decoration-underline font-weight-medium ml-2">プランを確認</nuxt-link>
+               </v-alert>
+               <!-- API error message -->
+               <v-alert v-if="useAppError && !isDisabledDueToSubscription" type="error" density="compact" class="mt-2">{{ useAppError }}</v-alert>
 
           </v-card-item>
         </v-card>
@@ -149,7 +189,7 @@
 
        <!-- Image Gallery with Thumbs -->
        <v-col cols="12">
-          <div v-if="app.galleryImages && app.galleryImages.length > 0">
+          <div v-if="app.subImages && app.subImages.length > 0">
              <h2 class="text-h5 font-weight-medium mb-4">ギャラリー</h2>
              <!-- Main Swiper -->
              <swiper
@@ -163,8 +203,8 @@
                :thumbs="{ swiper: thumbsSwiper }"
                class="gallery-swiper-main mb-3"
              >
-               <swiper-slide v-for="(image, index) in app.galleryImages" :key="`main-${index}`">
-                 <v-img :src="image" aspect-ratio="16/9" cover></v-img>
+               <swiper-slide v-for="(image, index) in app.subImages" :key="`main-${index}`">
+                 <v-img :src="image.imageUrl" aspect-ratio="16/9" cover></v-img>
                </swiper-slide>
              </swiper>
  
@@ -184,67 +224,118 @@
                :free-mode="true"
                class="gallery-swiper-thumbs"
              >
-                <swiper-slide v-for="(image, index) in app.galleryImages" :key="`thumb-${index}`">
-                  <v-img :src="image" aspect-ratio="1" cover class="thumb-image"></v-img>
+                <swiper-slide v-for="(image, index) in app.subImages" :key="`thumb-${index}`">
+                  <v-img :src="image.imageUrl" aspect-ratio="1" cover class="thumb-image"></v-img>
                 </swiper-slide>
              </swiper>
           </div>
           <v-card v-else class="mb-5">
-              <v-img :src="app.imageUrl" aspect-ratio="16/9" cover></v-img>
+              <v-img :src="app.thumbnailUrl || 'https://placehold.jp/300x300.png?text=No+Image'" aspect-ratio="16/9" cover></v-img>
               <v-card-text>ギャラリー画像がありません。</v-card-text>
           </v-card>
        </v-col>
      </v-row>
  
       <!-- Recommended Apps -->
-      <v-row v-if="allRecommendedApps.length > 0">
+      <v-row>
           <v-col cols="12">
               <h2 class="text-h5 font-weight-medium my-4">おすすめのアプリ</h2>
-              <v-row>
-                  <v-col
-                      v-for="recApp in paginatedRecommendedApps"
-                      :key="recApp.id"
-                      cols="12"
-                      sm="6"
-                      md="4"
-                      lg="3"
-                      xl="2" 
-                  >
-                      <AppCard :app="recApp" @title-click="goToAppDetail(recApp.id)" />
+              
+              <!-- Recommended Loading -->
+              <v-row v-if="recommendedLoading" justify="center">
+                  <v-progress-circular indeterminate color="primary" class="my-4"></v-progress-circular>
+              </v-row>
+
+              <!-- Recommended Error -->
+              <v-row v-else-if="recommendedError">
+                  <v-col cols="12">
+                      <v-alert type="warning" density="compact" variant="tonal">
+                          おすすめアプリの読み込みに失敗しました: {{ recommendedError.message }}
+                      </v-alert>
                   </v-col>
               </v-row>
-              <v-row justify="center" class="mt-4">
-                 <v-col cols="auto">
-                     <v-pagination
-                         v-model="recommendedCurrentPage"
-                         :length="totalRecommendedPages"
-                         :total-visible="7"
-                     ></v-pagination>
-                 </v-col>
+
+              <!-- Recommended Apps List & Pagination -->
+              <template v-else-if="allRecommendedApps.length">
+                  <v-row>
+                      <v-col
+                          v-for="recApp in paginatedRecommendedApps" 
+                          :key="recApp.id"
+                          cols="12"
+                          sm="6"
+                          md="4"
+                          lg="3"
+                          xl="2" 
+                      >
+                          <!-- ★ Pass mapped RecommendedApp to AppCard -->
+                          <AppCard :app="recApp" @title-click="goToAppDetail(recApp.id)" />
+                      </v-col>
+                  </v-row>
+                  <v-row justify="center" class="mt-4">
+                     <v-col cols="auto">
+                         <v-pagination
+                             v-model="recommendedCurrentPage"
+                             :length="totalRecommendedPages"
+                             :total-visible="7"
+                         ></v-pagination>
+                     </v-col>
+                  </v-row>
+              </template>
+              
+              <!-- No Recommendations Found -->
+              <v-row v-else>
+                  <v-col cols="12">
+                      <p class="text-medium-emphasis text-center pa-4">関連するおすすめアプリは見つかりませんでした。</p>
+                  </v-col>
               </v-row>
           </v-col>
       </v-row>
  
    </v-container>
-    <v-container v-else class="text-center">
+    <v-container v-else-if="loading" class="text-center">
       <v-progress-circular indeterminate color="primary" class="my-10"></v-progress-circular>
-      <p v-if="!loading">アプリが見つかりません。</p>
+    </v-container>
+    <v-container v-else class="text-center">
+        <v-alert v-if="error" type="error" class="my-10">
+            アプリ情報の読み込みに失敗しました: {{ error.message }}
+        </v-alert>
+        <p v-else-if="!app && !loading">アプリデータが見つかりませんでした。</p>
    </v-container>
 
-  <!-- Use Bookmark Dialog Component -->
+  <!-- Bookmark Dialog Component -->
   <BookmarkDialog
+    v-if="app" 
     v-model="bookmarkDialog"
-    :app-id="app?.id"
-    :app-name="app?.name ?? ''"
-    @bookmark-saved="handleBookmarkSaved"
-    @bookmark-removed="handleBookmarkRemoved"
+    :app-id="app.id" 
+    :app-name="app.name ?? ''"
+    @update:bookmarked-status="handleBookmarkStatusUpdate" 
   />
+
+  <!-- Snackbar for login required messages -->
+  <v-snackbar
+    v-model="snackbarVisible"
+    :timeout="4000" 
+    :color="snackbarColor"
+    location="bottom center" 
+  >
+    {{ snackbarMessage }}
+    <template v-slot:actions>
+      <v-btn
+        color="white"
+        variant="text"
+        @click="snackbarVisible = false"
+      >
+        閉じる
+      </v-btn>
+    </template>
+  </v-snackbar>
 
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useNuxtApp } from '#app';
 import { Swiper, SwiperSlide } from 'swiper/vue';
 import { FreeMode, Navigation, Thumbs } from 'swiper/modules';
 import AppCard from '~/components/AppCard.vue';
@@ -257,335 +348,379 @@ import 'swiper/css/free-mode';
 import 'swiper/css/navigation';
 import 'swiper/css/thumbs';
 
-interface AppBase {
+// --- Type Definitions ---
+interface CategoryInfo { id: number; name: string; }
+interface TagInfo { id: number; name: string; }
+interface SubImageInfo { id: number; imageUrl: string; }
+
+interface UserSubscription {
+  id: number;
+  status: string;
+  plan: string;
+  priceMonthly: number | null;
+}
+
+interface UserPayload {
+  userId: number;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  subscription?: UserSubscription | null;
+  planName: string;
+}
+
+interface AppDetail {
+  id: number;
+  name: string;
+  description: string | null;
+  thumbnailUrl: string | null;
+  appUrl: string;
+  creatorId: number;
+  creatorName?: string;
+  creatorAvatarUrl?: string | null;
+  status: string;
+  categoryId: number | null;
+  isSubscriptionLimited: boolean;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  category?: CategoryInfo | null;
+  tags: TagInfo[];
+  subImages: SubImageInfo[];
+  isBookmarked?: boolean;
+  isLiked?: boolean;
+  isDisliked?: boolean;
+  likesCount: number;
+  dislikesCount: number;
+}
+
+// ★ Define AppDto as returned by the API (matches server/dto/app.dto.ts)
+interface ApiAppDto {
+  id: number;
+  name: string;
+  description: string | null;
+  thumbnailUrl: string | null;
+  appUrl: string; // Assuming this is part of AppDto
+  isSubscriptionLimited: boolean;
+  usageCount: number;
+  createdAt: string;
+  category?: { id: number; name: string } | null;
+  creatorId?: number | null;
+  creatorName?: string;
+  creatorAvatarUrl?: string | null;
+}
+
+// ★ Define RecommendedApp matching AppCard props
+interface RecommendedApp {
     id: number;
     name: string;
-    description: string;
-    imageUrl: string;
-    likes: number;
-    dislikes: number;
-}
-
-interface AppDetail extends AppBase {
-  category: string;
-  tags: string[];
-  galleryImages: string[];
-  publishedDate: Date;
-  lastUpdatedDate: Date;
-  usageCount: number;
-  requiresSubscription: boolean;
-  developerId: number;
-  developerName: string;
-  developerAvatarUrl: string;
-}
-
-type RecommendedApp = AppBase & { 
-    requiresSubscription: boolean; 
+    description: string; 
+    imageUrl: string; 
+    likes: number; 
+    dislikes?: number; 
+    requiresSubscription: boolean;
     usageCount: number;
-    isBookmarked?: boolean;
-};
+    category?: { id: number; name: string } | null;
+    creatorId?: number | null;
+    creatorName?: string;
+    creatorAvatarUrl?: string | null;
+}
+
+// ★ Define API response for recommended apps
+interface RecommendedAppListResponse {
+  data: ApiAppDto[]; // ★ Change 'apps' to 'data'
+  total: number;
+}
+// ----------------------------------------
 
 const route = useRoute();
 const router = useRouter();
+const { $api, payload } = useNuxtApp();
+const loggedInUser = computed<UserPayload | null>(() => payload.user as UserPayload | null);
+
 const app = ref<AppDetail | null>(null);
 const allRecommendedApps = ref<RecommendedApp[]>([]);
 const loading = ref(true);
+const error = ref<Error | null>(null);
+const recommendedLoading = ref(false);
+const recommendedError = ref<Error | null>(null);
 const vuetifyTheme = useTheme();
 const thumbsSwiper = ref<any>(null);
+
+// --- Interaction States (Single declaration block) ---
 const isLiked = ref(false);
 const isDisliked = ref(false);
+const isBookmarked = ref(false); 
+const bookmarkDialog = ref(false);
+const useAppLoading = ref(false);
+const useAppError = ref<string | null>(null);
+const bookmarkLoading = ref(false);
+const ratingLoading = ref(false);
+// --------------------------
+
+// --- Pagination State (Single declaration block) ---
 const recommendedCurrentPage = ref(1);
 const recommendedItemsPerPage = 20;
-
-// --- LocalStorage Keys ---
-const BOOKMARK_DESTINATIONS_KEY = 'bookmarkDestinations';
-const BOOKMARKED_APPS_KEY = 'bookmarkedApps';
-
-// Type for data stored in localStorage
-interface LocalStorageBookmarkData {
-  destinations: string[];
-  apps: { [appId: number]: string };
-}
-
-// --- Bookmark State --- 
-const bookmarkDialog = ref(false);
-const isBookmarked = ref(false);
-
-// --- Helper Functions for localStorage ---
-const saveBookmarkedAppsToStorage = (apps: { [appId: number]: string }) => {
-  localStorage.setItem(BOOKMARKED_APPS_KEY, JSON.stringify(apps));
-};
-
-// Load only the bookmarked apps map
-const loadBookmarkedAppsMap = (): { [appId: number]: string } => {
-    const appsStr = localStorage.getItem(BOOKMARKED_APPS_KEY);
-    const apps = appsStr ? JSON.parse(appsStr) : {};
-    if (!appsStr) {
-        localStorage.setItem(BOOKMARKED_APPS_KEY, JSON.stringify(apps)); // Save empty if not exists
-    }
-    return apps;
-};
+// --------------------------------------------------
 
 const setThumbsSwiper = (swiper: any) => {
   thumbsSwiper.value = swiper;
 };
 
-// --- Data Fetching Functions ---
-const generateLongDescription = (appName: string): string => {
-    const baseText = `${appName}は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。は非常に便利なアプリケーションで、多くのユーザーに愛用されています。主な特徴としては、直感的なインターフェース、豊富なカスタマイズオプション、そして安定したパフォーマンスが挙げられます。このツールを使用することで、日常のタスクを効率化し、生産性を大幅に向上させることが期待できます。`;
-    let longText = baseText;
-    while (longText.length < 250) {
-        longText += ` ${appName}に関する追加情報。更新も頻繁に行われ、新機能が定期的に追加されます。サポート体制も充実しており、安心して利用できます。`;
-    }
-    return longText;
-};
-
-const fetchAppDataById = (id: number): AppDetail | null => {
-    if (id >= 1 && id <= 100) {
-        const appName = `アプリ ${id}`;
-        const categories = ['仕事効率化', 'エンタメ', '開発ツール', 'コミュニケーション', 'ユーティリティ'];
-        const allTags = ['AI', 'チャット', '画像生成', 'コード', '分析', '自動化', 'テキスト', 'API連携', '業務改善'];
-        const randomTags = allTags.sort(() => 0.5 - Math.random()).slice(0, Math.floor(Math.random() * 3) + 2);
+// --- Data Fetching Function ---
+async function loadAppData(id: number) {
+    loading.value = true;
+    error.value = null;
+    app.value = null;
+    allRecommendedApps.value = [];
+    thumbsSwiper.value = null;
+    try {
+        const response = await $api.get<AppDetail>(`/apps/${id}`);
+        app.value = response.data;
+        isBookmarked.value = app.value.isBookmarked ?? false;
+        isLiked.value = app.value.isLiked ?? false;
+        isDisliked.value = app.value.isDisliked ?? false;
         
-        const now = new Date();
-        const publishedDate = new Date(now.getTime() - Math.random() * 365 * 24 * 60 * 60 * 1000);
-        const lastUpdatedDate = new Date(publishedDate.getTime() + Math.random() * (now.getTime() - publishedDate.getTime()));
-        lastUpdatedDate.setDate(lastUpdatedDate.getDate() - Math.random() * 90); 
-
-        const developerId = Math.floor(id / 10) + 1; 
-        const developerName = `開発者 ${String.fromCharCode(65 + developerId - 1)}`; 
-        const developerAvatarUrl = `https://placehold.jp/40x40.png?text=Dev${developerId}`;
-
-        return {
-            id: id,
-            name: appName,
-            description: generateLongDescription(appName),
-            imageUrl: `https://placehold.jp/300x300.png?text=App+${id}`,
-            likes: Math.floor(Math.random() * 999999) + 1000,
-            dislikes: Math.floor(Math.random() * 50000),
-            category: categories[Math.floor(Math.random() * categories.length)],
-            tags: randomTags,
-            publishedDate: publishedDate,
-            lastUpdatedDate: lastUpdatedDate > publishedDate ? lastUpdatedDate : publishedDate,
-            usageCount: Math.floor(Math.random() * 1000000),
-            galleryImages: Array.from({ length: Math.floor(Math.random() * 6) + 5 }, (_, i) =>
-                `https://placehold.jp/1280x720.png?text=Gallery+${id}-${i + 1}`
-            ),
-            requiresSubscription: id % 10 === 0,
-            developerId: developerId,
-            developerName: developerName,
-            developerAvatarUrl: developerAvatarUrl
-        };
-    }
-    return null;
-};
-
-// Fetch ALL possible recommended apps (excluding current)
-const fetchAllRecommendedApps = (excludeId: number): RecommendedApp[] => {
-    const recommendations: RecommendedApp[] = [];
-    const possibleIds = Array.from({ length: 100 }, (_, i) => i + 1).filter(id => id !== excludeId);
-    const bookmarkedApps = loadBookmarkedAppsMap(); // Load only app map
-
-    for (const randomId of possibleIds) {
-        const recData = fetchAppDataById(randomId); 
-        if (recData) {
-            recommendations.push({
-                id: recData.id,
-                name: recData.name,
-                description: recData.description.substring(0, 70) + '...',
-                imageUrl: recData.imageUrl,
-                likes: recData.likes,
-                dislikes: recData.dislikes,
-                requiresSubscription: recData.requiresSubscription,
-                usageCount: recData.usageCount,
-                isBookmarked: !!bookmarkedApps[recData.id]
-            });
+        if (app.value) {
+          const categoryId = app.value.category?.id;
+          const tagIds = app.value.tags?.map(tag => tag.id);
+          fetchAndSetRecommendedApps(app.value.id, categoryId, tagIds);
+        } else {
+          console.warn('App data is null after fetch, skipping recommendations.');
         }
+    } catch (err: any) {
+        console.error('Failed to fetch app data:', err);
+        error.value = new Error(err.response?.data?.message || err.message || 'アプリ情報の取得に失敗しました。');
+        if (err.response?.status === 404) {
+           error.value = new Error('アプリが見つかりません。');
+        }
+    } finally {
+        loading.value = false;
     }
-    // Optionally shuffle recommendations
-    return recommendations.sort(() => 0.5 - Math.random()); 
 };
 
-// --- Computed Properties for Recommended Apps Pagination ---
+// ★ New function to fetch and set recommended apps
+async function fetchAndSetRecommendedApps(currentAppId: number, categoryId?: number, inputTagIds?: number[]) {
+  recommendedLoading.value = true;
+  recommendedError.value = null;
+  recommendedCurrentPage.value = 1; // Reset pagination
+
+  // ★ Ensure tagIdsToSend is always an array
+  const tagIdsToSend: number[] = Array.isArray(inputTagIds) ? inputTagIds : [];
+
+  const params: Record<string, any> = {
+      limit: 100, 
+      ...(categoryId && { categoryId: categoryId }),
+      // ★ Always include tagIds key, even if empty initially
+      tagIds: tagIdsToSend, 
+  };
+
+  try {
+    console.log(`Fetching recommended apps for ${currentAppId} with params:`, params); // Log params before serialization
+    const response = await $api.get<RecommendedAppListResponse>(`/apps/${currentAppId}/recommended`, {
+        params: params,
+    });
+    console.log('Recommended apps response:', response.data);
+
+    if (response.data && Array.isArray(response.data.data)) { 
+      allRecommendedApps.value = response.data.data.map((apiApp: ApiAppDto): RecommendedApp => ({
+          id: apiApp.id,
+          name: apiApp.name,
+          description: apiApp.description ?? '', 
+          imageUrl: apiApp.thumbnailUrl ?? 'https://placehold.jp/300x300.png?text=No+Image', 
+          likes: 0, 
+          dislikes: 0,
+          requiresSubscription: apiApp.isSubscriptionLimited,
+          usageCount: apiApp.usageCount,
+          category: apiApp.category, 
+          creatorId: apiApp.creatorId,
+          creatorName: apiApp.creatorName,
+          creatorAvatarUrl: apiApp.creatorAvatarUrl,
+      }));
+    } else {
+      console.warn('Recommended apps data received, but response.data.data is missing or not an array:', response.data);
+      allRecommendedApps.value = []; 
+    }
+
+  } catch (err: any) {
+    console.error('Failed to fetch recommended apps:', err);
+    recommendedError.value = new Error(err.response?.data?.message || err.message || 'おすすめアプリの取得に失敗しました。');
+    allRecommendedApps.value = []; 
+  } finally {
+    recommendedLoading.value = false;
+  }
+}
+
+// --- Computed Properties for Pagination ---
 const totalRecommendedPages = computed(() => {
   return Math.ceil(allRecommendedApps.value.length / recommendedItemsPerPage);
 });
-
 const paginatedRecommendedApps = computed(() => {
   const start = (recommendedCurrentPage.value - 1) * recommendedItemsPerPage;
   const end = start + recommendedItemsPerPage;
   return allRecommendedApps.value.slice(start, end);
 });
+// ------------------------------------------
 
-// Helper function to format large like numbers
+// --- Helper Functions ---
 const formatLikes = (num: number): string => {
-    if (num >= 10000) {
-        return (num / 10000).toFixed(1).replace(/\.0$/, '') + '万';
-    }
-    return num.toString();
+  if (num >= 10000) return (num / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+  return num.toString();
+};
+const formatDate = (dateString: string | Date | undefined): string => {
+    if (!dateString) return '';
+    try {
+        const date = new Date(dateString);
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        return `${year}/${month}/${day}`;
+    } catch (e) { console.error('Error formatting date:', dateString, e); return 'N/A'; }
 };
 
-// --- Like/Unlike Functions ---
-const likeApp = () => {
-    if (!app.value) return;
-    const wasLiked = isLiked.value;
-    const wasDisliked = isDisliked.value;
+// --- Snackbar State ---
+const snackbarVisible = ref(false);
+const snackbarMessage = ref('');
+const snackbarColor = ref('info'); // 'success', 'error', 'info', 'warning'
 
-    // Toggle like off
-    if (wasLiked) {
-        isLiked.value = false;
-        app.value.likes--;
-    } else {
-        // Like on
-        isLiked.value = true;
-        app.value.likes++;
-        // If it was disliked, toggle dislike off
-        if (wasDisliked) {
-            isDisliked.value = false;
-            app.value.dislikes--;
-        }
-    }
-    // TODO: Add API call here to persist the like status
-    console.log(`Liked: ${isLiked.value}, Disliked: ${isDisliked.value}`);
+// --- Helper Functions ---
+const showSnackbar = (message: string, color: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+  snackbarMessage.value = message;
+  snackbarColor.value = color;
+  snackbarVisible.value = true;
 };
 
-const dislikeApp = () => {
-    if (!app.value) return;
-    const wasLiked = isLiked.value;
-    const wasDisliked = isDisliked.value;
-
-    // Toggle dislike off
-    if (wasDisliked) {
-        isDisliked.value = false;
-        app.value.dislikes--;
-    } else {
-        // Dislike on
-        isDisliked.value = true;
-        app.value.dislikes++;
-        // If it was liked, toggle like off
-        if (wasLiked) {
-            isLiked.value = false;
-            app.value.likes--;
-        }
-    }
-    // TODO: Add API call here to persist the unlike status
-    console.log(`Liked: ${isLiked.value}, Disliked: ${isDisliked.value}`);
-};
-
-// --- Navigation Function (Keep existing goToAppDetail) ---
-const goToAppDetail = (appId: number) => {
-    router.push(`/apps/${appId}`);
-};
-
-// --- Data Loading Logic ---
-const loadAppData = (id: number) => {
-    loading.value = true;
-    app.value = null;
-    allRecommendedApps.value = [];
-    thumbsSwiper.value = null;
-    isLiked.value = false;
-    isDisliked.value = false;
-    isBookmarked.value = false;
-
-    setTimeout(() => {
-        const fetchedApp = fetchAppDataById(id);
-        app.value = fetchedApp;
-        if (fetchedApp) {
-            const bookmarkedAppsMap = loadBookmarkedAppsMap();
-            isBookmarked.value = !!bookmarkedAppsMap[id];
-            allRecommendedApps.value = fetchAllRecommendedApps(id);
-        }
-        loading.value = false;
-    }, 300);
-};
-
-// --- Lifecycle and Watcher (Keep existing onMounted and watch) ---
-onMounted(() => {
-  const appId = Number(route.params.id);
-  if (!isNaN(appId)) {
-    loadAppData(appId);
-  }
+// --- Computed Properties ---
+const userHasPaidSubscription = computed(() => {
+  // Check if user is logged in, has a subscription, and the plan name is not 'free'
+  return !!loggedInUser.value && loggedInUser.value.planName !== 'free';
 });
 
+// ★ Update isUseAppButtonDisabled: Remove login check
+const isUseAppButtonDisabled = computed(() => {
+  if (useAppLoading.value) return true; // Disabled when loading
+  if (app.value?.isSubscriptionLimited && !userHasPaidSubscription.value) {
+    return true; // Disabled if app requires subscription and user doesn't have a paid one
+  }
+  return false; // Enabled otherwise
+});
+
+// ★ Add back isDisabledDueToSubscription computed property
+const isDisabledDueToSubscription = computed(() => {
+  // Only true if the app requires subscription, the user IS logged in, but doesn't have a paid plan
+  return !!(app.value?.isSubscriptionLimited && payload.isLoggedIn && !userHasPaidSubscription.value);
+});
+
+// --- Action Functions (Add login checks) ---
+const likeApp = async () => {
+  // ★ Check login status first
+  if (!payload.isLoggedIn) {
+    showSnackbar('評価機能を利用するにはサインインが必要です。', 'warning');
+    return;
+  }
+  if (!app.value || ratingLoading.value) { return; }
+  ratingLoading.value = true;
+  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likesCount, dislikes: app.value.dislikesCount };
+  const apiPayload = { type: 'LIKE' };
+  try {
+    const newState = !previousState.isLiked;
+    isLiked.value = newState;
+    app.value.likesCount += newState ? 1 : -1;
+    if (newState && previousState.isDisliked) { isDisliked.value = false; app.value.dislikesCount--; }
+    await $api.post(`/me/ratings/apps/${app.value.id}`, apiPayload);
+  } catch (err) { console.error("Like/Unlike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likesCount = previousState.likes; app.value.dislikesCount = previousState.dislikes; } }
+  finally { ratingLoading.value = false; }
+};
+
+const dislikeApp = async () => {
+  // ★ Check login status first
+  if (!payload.isLoggedIn) {
+    showSnackbar('評価機能を利用するにはサインインが必要です。', 'warning');
+    return;
+  }
+  if (!app.value || ratingLoading.value) { return; }
+  ratingLoading.value = true;
+  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likesCount, dislikes: app.value.dislikesCount };
+  const apiPayload = { type: 'DISLIKE' };
+  try {
+    const newState = !previousState.isDisliked;
+    isDisliked.value = newState;
+    app.value.dislikesCount += newState ? 1 : -1;
+    if (newState && previousState.isLiked) { isLiked.value = false; app.value.likesCount--; }
+    await $api.post(`/me/ratings/apps/${app.value.id}`, apiPayload);
+  } catch (err) { console.error("Dislike/Un-dislike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likesCount = previousState.likes; app.value.dislikesCount = previousState.dislikes; } }
+  finally { ratingLoading.value = false; }
+};
+
+const useApp = async () => {
+  // ★ Check login status first
+  if (!payload.isLoggedIn) {
+    showSnackbar('アプリを利用するにはサインインが必要です。', 'warning');
+    return;
+  }
+  if (!app.value || useAppLoading.value) return;
+  // Check for subscription again here before proceeding, even though button might be enabled
+  // This handles edge cases where state might change between render and click
+  if (app.value.isSubscriptionLimited && !userHasPaidSubscription.value) {
+    // This case should ideally be handled by the disabled state, but double-check
+    showSnackbar('このアプリを使用するには、有料プランへの登録が必要です。', 'warning');
+    // Optionally link to plans page from here too if needed, or rely on the v-alert
+    return; 
+  }
+  useAppLoading.value = true; useAppError.value = null;
+  try {
+    await $api.post(`/apps/${app.value.id}/use`);
+    app.value.usageCount++;
+    if (app.value.appUrl) {
+      const targetUrl = app.value.appUrl.startsWith('/') ? router.resolve(app.value.appUrl).href : app.value.appUrl;
+      window.open(targetUrl, '_blank');
+    } else { console.warn('App URL not defined.'); const fallbackUrl = router.resolve(`/apps/${app.value.id}/use`).href; window.open(fallbackUrl, '_blank'); }
+  } catch (err: any) {
+    console.error('Failed to use app:', err);
+    if (err.response?.status === 403) { useAppError.value = err.response?.data?.message || 'このアプリを使用するには有料プランへの登録が必要です。'; }
+    else { useAppError.value = err.response?.data?.message || 'アプリの利用処理中にエラーが発生しました。'; }
+  } finally { useAppLoading.value = false; }
+};
+
+// --- Navigation ---
+const goToAppDetail = (appId: number) => { router.push(`/apps/${appId}`); };
+
+// --- Lifecycle & Watcher ---
+onMounted(() => {
+  const appId = Number(route.params.id);
+  if (!isNaN(appId)) loadAppData(appId);
+  else { loading.value = false; error.value = new Error('無効なアプリIDです。'); }
+});
 watch(() => route.params.id, (newId, oldId) => {
   const appId = Number(newId);
   if (!isNaN(appId) && newId !== oldId) {
-    loadAppData(appId);
+      loadAppData(appId); // This calls the updated fetch function
+  }
+  else if (isNaN(appId)) { 
+      loading.value = false; 
+      error.value = new Error('無効なアプリIDです。'); 
+      app.value = null; 
+      allRecommendedApps.value = []; 
   }
 });
 
-// --- Add Use App Function --- 
-const useApp = () => {
-  if (!app.value) return;
-
-  if (app.value.requiresSubscription) {
-      // Redirect to plans page instead of alert
-      console.log(`Subscription required for app: ${app.value.name} (ID: ${app.value.id}). Redirecting to /plans.`);
-      router.push('/plans'); // Keep redirecting to plans in the current tab
-  } else {
-      console.log(`Using app: ${app.value.name} (ID: ${app.value.id})`);
-      // Open the use page for this app in a new tab
-      const url = router.resolve(`/apps/${app.value.id}/use`).href;
-      window.open(url, '_blank'); 
-  }
-};
-
-const formatDate = (date: Date): string => {
-    // Simple date formatter (YYYY/MM/DD)
-    if (!date) return '';
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}/${month}/${day}`;
-};
-
-// --- Bookmark Methods --- 
+// --- Bookmark Dialog Handling (Add login check) ---
 const openBookmarkDialog = () => {
+  // ★ Check login status first
+  if (!payload.isLoggedIn) {
+    showSnackbar('ブックマーク機能を利用するにはサインインが必要です。', 'warning');
+    return;
+  }
+  if (!app.value) { console.warn('Cannot open bookmark dialog: App not loaded.'); return; }
   bookmarkDialog.value = true;
 };
+const handleBookmarkStatusUpdate = (newStatus: boolean) => { isBookmarked.value = newStatus; };
+// -------------------------------
 
-// Handle events from the dialog
-const handleBookmarkSaved = (payload: { appId: number; destination: string }) => {
-  console.log('[id].vue: Received bookmark-saved', payload);
-  // Update localStorage
-  const storedApps = loadBookmarkedAppsMap();
-  storedApps[payload.appId] = payload.destination;
-  saveBookmarkedAppsToStorage(storedApps);
-  // Update local state if it's the current app
-  if (app.value && app.value.id === payload.appId) {
-      isBookmarked.value = true;
-  }
-  // Update recommended apps list if needed
-  const targetAppIndex = allRecommendedApps.value.findIndex(rec => rec.id === payload.appId);
-  if (targetAppIndex !== -1) {
-      allRecommendedApps.value[targetAppIndex].isBookmarked = true;
-      // Force reactivity if direct modification doesn't work
-      // allRecommendedApps.value = [...allRecommendedApps.value];
-  }
-};
-
-const handleBookmarkRemoved = (payload: { appId: number }) => {
-  console.log('[id].vue: Received bookmark-removed', payload);
-  // Update localStorage
-  const storedApps = loadBookmarkedAppsMap();
-  if (storedApps[payload.appId]) {
-    delete storedApps[payload.appId];
-    saveBookmarkedAppsToStorage(storedApps);
-  }
-  // Update local state if it's the current app
-  if (app.value && app.value.id === payload.appId) {
-      isBookmarked.value = false;
-  }
-  // Update recommended apps list if needed
-  const targetAppIndex = allRecommendedApps.value.findIndex(rec => rec.id === payload.appId);
-  if (targetAppIndex !== -1) {
-      allRecommendedApps.value[targetAppIndex].isBookmarked = false;
-      // Force reactivity if direct modification doesn't work
-      // allRecommendedApps.value = [...allRecommendedApps.value];
-  }
-};
+console.log(loggedInUser.value);
 
 </script>
+
 <style scoped>
 /* Remove previous swiper styles if they exist */
 

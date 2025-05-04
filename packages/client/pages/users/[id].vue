@@ -3,8 +3,8 @@
     <!-- Page Title: Removed as it's likely handled by layout or _app.vue -->
     <!-- <PageTitle :title="pageTitle" /> -->
 
-    <!-- Loading State -->
-    <v-card v-if="loading" variant="outlined">
+    <!-- Loading State for Profile -->
+    <v-card v-if="dataLoading" variant="outlined" class="mb-6">
       <v-card-text class="text-center">
         <v-progress-circular indeterminate color="primary"></v-progress-circular>
         <p class="mt-3">ユーザー情報を読み込んでいます...</p>
@@ -15,14 +15,18 @@
     <v-card v-else-if="userProfile" variant="outlined" class="mb-6">
       <v-card-item>
         <div class="d-flex align-center">
-          <v-avatar size="64" class="mr-4">
-            <v-img :src="userProfile.avatarUrl" :alt="userProfile.name"></v-img>
+          <v-avatar size="64" class="mr-4" :image="userProfile.avatarUrl || undefined">
+            <!-- Fallback Icon -->
+            <v-icon v-if="!userProfile.avatarUrl" size="x-large">mdi-account-circle</v-icon>
           </v-avatar>
           <div>
             <v-card-title class="text-h5 pa-0">{{ userProfile.name }}</v-card-title>
+            <!-- Optional: Display Email or Role -->
+            <v-card-subtitle class="pa-0 mt-1">{{ userProfile.email }}</v-card-subtitle>
           </div>
         </div>
       </v-card-item>
+      <!-- 自己紹介セクションのコメントを解除 -->
       <v-divider></v-divider>
       <v-card-text>
         <h3 class="text-subtitle-1 mb-2">自己紹介</h3>
@@ -31,17 +35,24 @@
       </v-card-text>
     </v-card>
 
-    <!-- User Not Found Alert -->
-    <v-alert v-else-if="!loading && !userProfile" type="warning" variant="outlined" class="mb-6">
-      ユーザーが見つかりませんでした。
+    <!-- User Not Found / Profile Error Alert -->
+    <v-alert v-else-if="dataError" type="warning" variant="outlined" class="mb-6">
+      {{ dataError }}
     </v-alert>
 
     <!-- User's Apps Section -->
-    <div v-if="!loading && userProfile">
+    <div v-if="userProfile"> <!-- Show apps section only if profile loaded successfully -->
+        <!-- App Search Input -->
+        <v-row class="mb-n2">
+            <v-col cols="12">
+                 <AppSearch v-model="appSearchQuery" label="作成したアプリを検索..." />
+            </v-col>
+        </v-row>
+
         <div class="d-flex justify-space-between align-center mb-4">
              <h2 class="text-h5 font-weight-medium">作成したアプリ</h2>
              <!-- Sorting Chips -->
-            <v-chip-group
+             <v-chip-group
                  v-model="sortOption"
                  mandatory
                  active-class="text-primary"
@@ -51,24 +62,53 @@
              </v-chip-group>
         </div>
 
-        <v-row v-if="sortedApps.length > 0">
+        <!-- Apps Loading Indicator -->
+        <v-row v-if="dataLoading" justify="center"> <!-- Use combined loading state -->
+            <v-col cols="auto">
+                <v-progress-circular indeterminate color="primary"></v-progress-circular>
+            </v-col>
+        </v-row>
+
+        <!-- Apps Error Alert -->
+        <v-alert v-else-if="dataError && !userProfile" type="error" variant="tonal" class="mb-4"> <!-- Show app error only if profile loaded but apps failed -->
+            {{ dataError }}
+        </v-alert>
+
+        <!-- Apps List -->
+        <v-row v-else-if="appsData.data.length > 0">
             <v-col
-                v-for="app in paginatedApps"
+                v-for="app in appsData.data"
                 :key="app.id"
                 cols="12"
                 sm="6"
                 md="4"
                 lg="3"
             >
-                <AppCard :app="app" @title-click="goToAppDetail(app.id)" />
+                <AppCard :app="{
+                    id: app.id,
+                    name: app.name,
+                    description: app.description || '',
+                    imageUrl: app.thumbnailUrl || 'https://placehold.jp/300x300.png?text=No+Image',
+                    likes: app.likesCount,
+                    dislikes: app.dislikesCount,
+                    usageCount: app.usageCount,
+                    requiresSubscription: app.isSubscriptionLimited,
+                    creatorId: app.creatorId,
+                    creatorName: app.creatorName, // Ensure these are available in AppDto if needed
+                    creatorAvatarUrl: app.creatorAvatarUrl,
+                    // カテゴリ情報を AppCard に渡す
+                    category: app.category
+                }" @title-click="goToAppDetail(app.id)" />
             </v-col>
         </v-row>
-        <v-alert v-else type="info" variant="tonal">
+
+        <!-- No Apps Message -->
+        <v-alert v-else-if="!dataLoading" type="info" variant="tonal"> <!-- Show only when not loading -->
             このユーザーはまだアプリを作成していません。
         </v-alert>
 
         <!-- Pagination -->
-        <v-row v-if="totalPages > 1" justify="center" class="mt-4">
+        <v-row v-if="totalPages > 1 && !dataLoading" justify="center" class="mt-4"> <!-- Hide pagination while loading -->
            <v-col cols="auto">
                <v-pagination
                    v-model="currentPage"
@@ -83,153 +123,186 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useNuxtApp } from '#app';
 // import PageTitle from '~/components/PageTitle.vue'; // Removed if not needed
 import AppCard from '~/components/AppCard.vue';
+import AppSearch from '~/components/AppSearch.vue'; // AppSearch をインポート
+import { debounce } from 'lodash-es'; // debounce をインポート
 
-// Define the user profile interface
+// Define the user profile interface based on API response
 interface UserProfile {
-  id: string | number;
+  id: number;
+  email: string;
   name: string;
-  username: string;
-  avatarUrl: string;
-  bio: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  role: string; // Assuming Role is returned as string
+  planName: string;
+  bio?: string | null; // bio をオプショナルで追加
 }
 
-// Define the user app interface (subset of AppBase)
-interface UserApp {
-    id: number;
-    name: string;
-    description: string;
-    imageUrl: string;
-    likes: number;
-    dislikes?: number;
-    createdAt: Date; // Added for sorting by latest
-    requiresSubscription: boolean;
-    usageCount: number;
-    isBookmarked?: boolean;
+// Define the App DTO interface (align with API response & AppCard)
+// Consider sharing this with index.vue
+interface AppDto {
+  id: number;
+  name: string;
+  description: string | null;
+  thumbnailUrl: string | null;
+  usageCount: number;
+  createdAt: string; // API returns string
+  categoryId?: number | null;
+  category?: { id: number; name: string } | null;
+  isSubscriptionLimited: boolean;
+  creatorId?: number | null;
+  creatorName?: string;
+  creatorAvatarUrl?: string | null;
+  likesCount: number;
+  dislikesCount: number;
+}
+
+interface AppListResponse {
+  data: AppDto[];
+  total: number;
 }
 
 const route = useRoute();
 const router = useRouter();
+const { $api } = useNuxtApp(); // $api を取得
+
 const userProfile = ref<UserProfile | null>(null);
-const userApps = ref<UserApp[]>([]);
-const loading = ref(true);
+const appsData = ref<AppListResponse>({ data: [], total: 0 });
+
+const dataLoading = ref(true); // 統合されたローディング状態
+const dataError = ref<string | null>(null); // 統合されたエラー状態
+
 const currentPage = ref(1);
-const itemsPerPage = 40;
-const sortOption = ref('trend'); // Default sort: 'trend' or 'latest'
+const itemsPerPage = 12;
+const sortOption = ref('trend');
+const appSearchQuery = ref('');
 
-// Extract user ID from route
-const userId = computed(() => route.params.id as string);
+const userId = computed(() => Number(route.params.id));
 
-// Dynamic page title (Consider if still needed or handled elsewhere)
+// Dynamic page title
 const pageTitle = computed(() => {
-  if (loading.value) {
-    return 'ユーザープロフィールを読み込み中...';
+  if (dataLoading.value) {
+    return 'ユーザー情報を読み込み中...';
   }
   return userProfile.value ? `${userProfile.value.name} のプロフィール` : 'ユーザーが見つかりません';
 });
 
-// Sorted Apps based on sortOption
-const sortedApps = computed(() => {
-    const appsToSort = [...userApps.value]; // Create a shallow copy to avoid mutating original
-    if (sortOption.value === 'latest') {
-        return appsToSort.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    } else { // Default to 'trend' (likes)
-        return appsToSort.sort((a, b) => b.likes - a.likes);
-    }
-});
-
-// Pagination computed properties based on sortedApps
-const totalPages = computed(() => {
-  return Math.ceil(sortedApps.value.length / itemsPerPage);
-});
-
-const paginatedApps = computed(() => {
-  // Reset page if it becomes invalid after sorting/filtering
-  if (currentPage.value > totalPages.value && totalPages.value > 0) {
-      currentPage.value = 1;
-  }
-  const start = (currentPage.value - 1) * itemsPerPage;
-  const end = start + itemsPerPage;
-  return sortedApps.value.slice(start, end);
-});
-
-// Placeholder for fetching user data (Simulated)
-const fetchUserProfile = async (id: string): Promise<UserProfile | null> => {
-  console.log(`Fetching profile for user ID: ${id}`);
-  await new Promise(resolve => setTimeout(resolve, 300));
-  const numericId = parseInt(id, 10);
-  if (isNaN(numericId) || numericId < 1 || numericId > 10) {
-    return null;
-  }
-  const sampleBio = `これはユーザー ${id} の自己紹介文です。ここに趣味や興味、スキルなどを記述できます。${'サンプルテキスト '.repeat(Math.floor(Math.random() * 10) + 3)}`;
-  return {
-    id: id,
-    name: `ユーザー ${id}`,
-    username: `user_${id}`,
-    avatarUrl: `https://placehold.jp/150x150.png?text=User+${id}`,
-    bio: numericId % 3 === 0 ? null : sampleBio,
+// --- API Parameter Calculation (変更なし) ---
+const apiParams = computed(() => {
+  const params: Record<string, any> = {
+    // creatorId は不要 (パスパラメータで指定するため)
+    page: currentPage.value,
+    limit: itemsPerPage,
   };
-};
+  if (sortOption.value === 'latest') {
+    params.sortBy = 'createdAt';
+    params.sortOrder = 'desc';
+  } else {
+    params.sortBy = 'usageCount';
+    params.sortOrder = 'desc';
+  }
+  if (appSearchQuery.value) {
+    params.appName = appSearchQuery.value;
+  }
+  return params;
+});
 
-// Placeholder for fetching user's apps (Simulated)
-const fetchUserApps = async (userId: string): Promise<UserApp[]> => {
-    console.log(`Fetching apps for user ID: ${userId}`);
-    await new Promise(resolve => setTimeout(resolve, 600));
+// --- Total Pages Calculation (変更なし) ---
+const totalPages = computed(() => {
+  return Math.ceil(appsData.value.total / itemsPerPage);
+});
 
-    const numericUserId = parseInt(userId, 10);
-    if (isNaN(numericUserId) || numericUserId < 1 || numericUserId > 5) {
-        return [];
-    }
+// Fetch combined user profile and apps data from API
+const fetchUserData = async () => {
+  if (isNaN(userId.value)) {
+      dataError.value = '無効なユーザーIDです。';
+      dataLoading.value = false;
+      userProfile.value = null;
+      appsData.value = { data: [], total: 0 };
+      return;
+  }
 
-    const apps: UserApp[] = [];
-    const totalAppsToGenerate = Math.min(400, Math.floor(Math.random() * 350) + 50);
-    const now = Date.now();
-
-    for (let i = 1; i <= totalAppsToGenerate; i++) {
-        const appId = numericUserId * 1000 + i;
-        const createdAt = new Date(now - Math.random() * 365 * 24 * 60 * 60 * 1000); // Random date within the last year
-        const likes = Math.floor(Math.random() * 500);
-        const dislikes = Math.floor(Math.random() * likes * 0.5); // Generate dislikes
-        apps.push({
-            id: appId,
-            name: `ユーザー ${userId} のアプリ ${i}`,
-            description: `これはユーザー ${userId} が作成したアプリ ${i} の説明文です。`, // Short description
-            imageUrl: `https://placehold.jp/300x200.png?text=App+${appId}`,
-            likes: likes,
-            dislikes: dislikes,
-            createdAt: createdAt, // Assign creation date
-            requiresSubscription: Math.random() < 0.1,
-            usageCount: Math.floor(Math.random() * 10000),
-            isBookmarked: Math.random() < 0.05,
-        });
-    }
-    return apps;
-};
-
-// Fetch user data and apps on component mount
-onMounted(async () => {
-  loading.value = true;
-  currentPage.value = 1;
-  sortOption.value = 'trend'; // Reset sort option on load
-  userApps.value = [];
+  dataLoading.value = true;
+  dataError.value = null;
+  console.log(`Fetching data for user ID: ${userId.value}, Params:`, apiParams.value);
 
   try {
-      const [profileResult, appsResult] = await Promise.all([
-          fetchUserProfile(userId.value),
-          fetchUserApps(userId.value)
-      ]);
-      userProfile.value = profileResult;
-      userApps.value = appsResult;
-  } catch (error) {
-      console.error("Failed to load user data or apps:", error);
-      userProfile.value = null;
-      userApps.value = [];
+    // /users/:id を呼び出し、アプリ取得用のクエリパラメータを渡す
+    const response = await $api.get<{ // レスポンス全体の型を定義 (仮)
+        id: number;
+        email: string;
+        name: string;
+        avatarUrl: string | null;
+        createdAt: string;
+        updatedAt: string;
+        role: string;
+        planName: string;
+        apps: AppListResponse; // ネストされたアプリ情報
+    }>(`/users/${userId.value}`, {
+      params: apiParams.value // ページネーション、ソート、検索パラメータ
+    });
+
+    // レスポンスからユーザー情報とアプリ情報を分割して設定
+    const { apps, ...profile } = response.data;
+    userProfile.value = profile;
+    appsData.value = apps;
+
+    // Ensure currentPage is valid after fetching
+    if (currentPage.value > totalPages.value && totalPages.value > 0) {
+        currentPage.value = totalPages.value;
+    }
+
+  } catch (err: any) {
+    console.error(`Failed to fetch data for user ID ${userId.value}:`, err);
+    dataError.value = 'データの読み込みに失敗しました。';
+    if (err.response?.status === 404) {
+        dataError.value = 'ユーザーが見つかりませんでした。';
+    }
+    userProfile.value = null;
+    appsData.value = { data: [], total: 0 };
   } finally {
-      loading.value = false;
+    dataLoading.value = false;
   }
+};
+
+// Debounced version of fetchUserData for search input
+const debouncedFetchUserData = debounce(() => {
+    currentPage.value = 1; // 検索時は1ページ目に戻す
+    fetchUserData();
+}, 300); // 300ms のデバウンス
+
+// Fetch initial data on component mount
+onMounted(() => {
+  fetchUserData(); // Initial data fetch
+});
+
+// Watch for changes in parameters (page, sort) and refetch data
+watch([currentPage, sortOption], () => {
+    // 検索クエリがある状態でページやソートが変わっても再検索はしないように
+    fetchUserData();
+});
+
+// Watch for search query changes (debounced)
+watch(appSearchQuery, debouncedFetchUserData);
+
+// Watch for userId changes (if the route could change without remounting)
+watch(userId, (newId) => {
+    if (!isNaN(newId)) {
+        currentPage.value = 1;
+        sortOption.value = 'trend';
+        appSearchQuery.value = '';
+        fetchUserData(); // Fetch data for the new user ID
+    } else {
+        dataError.value = '無効なユーザーIDです。';
+        userProfile.value = null;
+        appsData.value = { data: [], total: 0 };
+    }
 });
 
 // Navigation function for AppCard

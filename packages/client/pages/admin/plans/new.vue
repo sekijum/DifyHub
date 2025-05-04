@@ -19,7 +19,7 @@
               </v-col>
 
               <!-- Price -->
-              <v-col cols="12" md="6">
+              <v-col cols="12">
                  <v-text-field
                   v-model.number="newPlan.price"
                   label="月額料金 (円) *"
@@ -33,23 +33,23 @@
               </v-col>
 
               <!-- Status -->
-              <v-col cols="12" md="6">
+              <v-col cols="12">
                 <v-select
                   v-model="newPlan.status"
-                  :items="statusOptions"
-                  item-title="title"
-                  item-value="value"
                   label="ステータス *"
-                  required
+                  :items="statusOptions"
+                  item-title="text"
+                  item-value="value"
                   variant="outlined"
                   density="compact"
                   :rules="[rules.required]"
                 ></v-select>
               </v-col>
             </v-row>
-
-            <!-- Dynamic Features List -->
+            
             <v-divider class="my-4"></v-divider>
+            
+            <!-- Dynamic Features List -->
             <h6 class="text-h6 mb-2">機能リスト</h6>
             <v-row v-for="(feature, index) in featureInputs" :key="feature.id" align="center">
               <v-col cols="12" sm="7" md="8">
@@ -74,7 +74,7 @@
                   <v-radio label="除く" value="excluded" color="grey"></v-radio>
                 </v-radio-group>
               </v-col>
-              <v-col cols="4" sm="1">
+              <v-col cols="4" sm="1" class="text-center">
                 <v-btn
                   icon
                   variant="text"
@@ -131,6 +131,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
+import { useNuxtApp } from 'nuxt/app';
 import PageTitle from '~/components/PageTitle.vue';
 
 definePageMeta({
@@ -138,47 +139,46 @@ definePageMeta({
 });
 
 const router = useRouter();
+const { $api } = useNuxtApp();
 
 // Interface for individual feature
 interface PlanFeature {
   text: string;
-  type: 'included' | 'excluded'; // Corresponds to mdi-check / mdi-close
+  type: 'included' | 'excluded';
+  id: number;
 }
 
-// Interface for the payload to create a plan
-interface PlanPayload {
+// Interface for the plan creation payload
+interface CreatePlanPayload {
   name: string;
   price: number;
-  features: PlanFeature[]; // Updated to use PlanFeature object
-  status: 'active' | 'inactive';
-}
-
-// Interface for feature inputs in the form (includes temporary id)
-interface PlanFeatureInput extends PlanFeature {
-  id: number;
+  status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
+  features?: string[];
 }
 
 // --- Form and State ---
 const createForm = ref<any>(null);
-const newPlan = reactive<Partial<Omit<PlanPayload, 'features'>>>({
-    name: '',
-    price: 0,
-    status: 'active',
-});
-
-// State for dynamic feature inputs
-const featureInputs = ref<PlanFeatureInput[]>([
-    { id: Date.now(), text: '', type: 'included' } // Start with one empty feature
-]);
-
 const isCreating = ref(false);
 const snackbar = reactive({ show: false, text: '', color: 'success' });
 
-// Options for status select
-const statusOptions = ref([
-    { title: '有効', value: 'active' },
-    { title: '無効', value: 'inactive' },
+// Status options
+const statusOptions = [
+  { text: '有効', value: 'ACTIVE' },
+  { text: '非公開', value: 'PRIVATE' },
+  { text: '停止', value: 'SUSPENDED' }
+];
+
+// State for dynamic feature inputs
+const featureInputs = ref<PlanFeature[]>([
+  { id: Date.now(), text: '', type: 'included' } // Start with one empty feature
 ]);
+
+const newPlan = reactive<CreatePlanPayload>({
+  name: '',
+  price: 0,
+  status: 'ACTIVE',
+  features: []
+});
 
 // --- Validation Rules ---
 const rules = {
@@ -210,40 +210,43 @@ const createPlan = async () => {
   const featuresValid = featureInputs.value.every(f => f.text.trim() !== '');
 
   if (!valid || !featuresValid) {
-      if (!featuresValid) {
-          snackbar.text = '機能リストのテキストを入力してください。';
-          snackbar.color = 'warning';
-          snackbar.show = true;
-      }
-      return; // Stop if form or features are invalid
+    if (!featuresValid) {
+      snackbar.text = '機能リストのテキストを入力してください。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    } else {
+      snackbar.text = '入力内容に問題があります。確認してください。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    }
+    return;
   }
 
   isCreating.value = true;
 
-  // Construct the payload
-  const payload: PlanPayload = {
-    name: newPlan.name!,
-    price: newPlan.price!,
-    // Map featureInputs to the final features array, removing the id
-    features: featureInputs.value.map(({ id, ...rest }) => rest),
-    status: newPlan.status!,
+  // APIに送信するデータを準備
+  const payload = {
+    name: newPlan.name,
+    price: newPlan.price,
+    status: newPlan.status,
+    // 機能リストは文字列配列としてサーバーに送信
+    features: featureInputs.value
+      .filter(f => f.text.trim() !== '')
+      .map(feature => `${feature.type === 'included' ? '+' : '-'}${feature.text}`)
   };
 
   try {
-    // --- Placeholder for Create Logic ---
-    console.log('Creating plan (simulation):', payload);
-    // TODO: Replace with actual API call (e.g., POST /api/plans)
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-
+    await $api.post('/admin/plans', payload);
+    
     snackbar.text = 'プランを新規作成しました。';
     snackbar.color = 'success';
     snackbar.show = true;
+    
     // Redirect to the list page after successful creation
     setTimeout(() => router.push('/admin/plans'), 1500);
-
-  } catch (error) {
-    console.error("Error during plan creation simulation:", error);
-    snackbar.text = '作成中にエラーが発生しました。';
+  } catch (err: any) {
+    console.error("プラン作成エラー:", err);
+    snackbar.text = err.response?.data?.message || '作成中にエラーが発生しました。';
     snackbar.color = 'error';
     snackbar.show = true;
   } finally {

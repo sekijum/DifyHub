@@ -1,15 +1,12 @@
-import type { IThread } from '~/types/thread';
-import type { IThreadComment } from '~/types/thread-comment';
-import type { ICollection } from '~/types/collection';
-
-export interface IUser {
+export interface MyProfile {
   id: number;
-  name: string;
-  role: string;
   email: string;
-  profileLink: string;
-  createdAt: string;
-  updatedAt: string;
-  threads: ICollection<IThread>;
-  comments: ICollection<IThreadComment>;
+  name: string;
+  avatarUrl: string | null;
+  role: "ADMINISTRATOR" | "DEVELOPER" | "USER"; // Role Enum
+  planName: string;
+  createdAt: string; // ISO Date String
+  updatedAt: string; // ISO Date String
+  status: string; // UserStatus Enum
+  developerStatus: 'UNSUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
 }

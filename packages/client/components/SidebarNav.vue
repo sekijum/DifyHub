@@ -1,31 +1,62 @@
 <template>
   <v-list v-model:opened="internalOpen" density="compact" nav>
-    <v-list-item 
-      :title="userEmail" 
-    >
-      <template v-slot:subtitle>
-        <v-chip color="blue" size="small" class="mr-1 my-1" variant="flat">{{ userRoleDisplay }}</v-chip>
-        <v-chip color="green" size="small" class="my-1" variant="flat">{{ userPlanDisplay }}</v-chip>
-      </template>
-    </v-list-item>
+    <!-- User Info Section -->
+    <template v-if="payload.isLoggedIn && payload.user">
+      <v-list-item :title="payload.user.email">
+        <template v-slot:subtitle>
+          <v-chip color="blue" size="small" class="mr-1 my-1" variant="flat">{{ userRoleDisplay }}</v-chip>
+          <v-chip color="green" size="small" class="my-1" variant="flat">{{ userPlanDisplay }}</v-chip>
+        </template>
+      </v-list-item>
+    </template>
+    <template v-else>
+        <v-list-item title="ゲスト" subtitle="サインインしてください"></v-list-item>
+    </template>
     <v-divider></v-divider>
 
+    <!-- Common Links -->
     <v-list-item prepend-icon="mdi-home-city" title="ホーム" value="home" to="/" :active="route.path === '/'"></v-list-item>
-    <!-- <v-list-item prepend-icon="mdi-star-outline" title="高く評価したアプリ" value="mypage-liked" to="/mypage/liked" :active="route.path === '/mypage/liked'"></v-list-item> -->
-    <!-- <v-list-item prepend-icon="mdi-bookmark-multiple-outline" title="ブックマーク" value="mypage-bookmarks" to="/mypage/bookmarks" :active="route.path === '/mypage/bookmarks'"></v-list-item> -->
-    <!-- <v-list-item prepend-icon="mdi-account" title="マイページ" value="account" to="/mypage" :active="route.path === '/mypage'"></v-list-item> -->
 
-    <!-- Add Notifications Link -->
-    <!-- <v-list-item prepend-icon="mdi-bell-outline" title="お知らせ" value="notifications" to="/notifications" :active="route.path.startsWith('/notifications')"></v-list-item> -->
+    <!-- Logged In Specific Links -->
+    <template v-if="payload.isLoggedIn">
+      <v-list-item prepend-icon="mdi-star-outline" title="高く評価したアプリ" value="mypage-liked" to="/mypage/liked" :active="route.path === '/mypage/liked'"></v-list-item>
+      <v-list-item prepend-icon="mdi-bookmark-multiple-outline" title="ブックマーク" value="mypage-bookmarks" to="/mypage/bookmarks" :active="route.path === '/mypage/bookmarks'"></v-list-item>
+      <v-list-item prepend-icon="mdi-account" title="マイページ" value="account" to="/mypage" :active="route.path === '/mypage'"></v-list-item>
+    </template>
+    <v-list-item prepend-icon="mdi-bell-outline" title="お知らせ" value="notifications" to="/notifications" :active="route.path.startsWith('/notifications')"></v-list-item>
 
-    <!-- Add Developer Admin Link -->
-    <!-- <v-list-item prepend-icon="mdi-developer-board" title="開発者管理画面" value="developer-admin" to="/developer" :active="route.path.startsWith('/developer')"></v-list-item> -->
+    <!-- Developer/Admin Link -->
+    <v-list-item
+      v-if="payload.isLoggedIn && (payload.isDeveloper)"
+      prepend-icon="mdi-developer-board"
+      title="開発者管理画面"
+      value="developer-admin"
+      to="/developer"
+      :active="route.path.startsWith('/developer')"
+    ></v-list-item>
+
+    <!-- Developer/Admin Link -->
+    <v-list-item
+      v-if="payload.isLoggedIn && (payload.isAdministrator)"
+      prepend-icon="mdi-view-dashboard-outline"
+      title="管理画面"
+      value="admin-dashboard"
+      to="/admin"
+      :active="route.path.startsWith('/admin')"
+    ></v-list-item>
 
     <v-divider class="my-2"></v-divider>
-    <v-list-item prepend-icon="mdi-login" title="サインイン" value="signin" to="/signin" :active="route.path === '/signin'"></v-list-item>
-    <v-list-item prepend-icon="mdi-account-plus" title="サインアップ" value="signup" to="/signup" :active="route.path === '/signup'"></v-list-item>
-    <v-list-item prepend-icon="mdi-logout" title="サインアウト" value="signout" @click="handleSignOut"></v-list-item>
 
+    <!-- Auth Links -->
+    <template v-if="!payload.isLoggedIn">
+      <v-list-item prepend-icon="mdi-login" title="サインイン" value="signin" to="/signin" :active="route.path === '/signin'"></v-list-item>
+      <v-list-item prepend-icon="mdi-account-plus" title="サインアップ" value="signup" to="/signup" :active="route.path === '/signup'"></v-list-item>
+    </template>
+    <template v-else>
+      <v-list-item prepend-icon="mdi-logout" title="サインアウト" value="signout" @click="handleSignOut"></v-list-item>
+    </template>
+
+    <!-- Service Info Section (always visible) -->
     <v-divider class="my-2"></v-divider>
     <v-list-subheader>サービス情報</v-list-subheader>
     <v-list-group value="サービス">
@@ -40,6 +71,7 @@
       <v-list-item prepend-icon="mdi-credit-card-outline" title="料金プラン" value="plans" to="/plans" :active="route.path === '/plans'"></v-list-item>
     </v-list-group>
 
+    <!-- Support Section (always visible) -->
     <v-list-group value="サポート">
       <template v-slot:activator="{ props }">
         <v-list-item
@@ -52,6 +84,7 @@
       <v-list-item prepend-icon="mdi-email-fast-outline" title="お問い合わせ" value="contact" to="/contact" :active="route.path === '/contact'"></v-list-item>
     </v-list-group>
 
+    <!-- Other Links Section (always visible) -->
     <v-list-group value="その他">
        <template v-slot:activator="{ props }">
         <v-list-item
@@ -69,26 +102,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { useNuxtApp } from '#app'; // useNuxtApp をインポート
 
 const route = useRoute();
+const { payload } = useNuxtApp(); // payload を取得
 
-// --- State for User Info --- 
-const userEmail = ref('user@example.com'); // Placeholder
-const userRoleDisplay = ref('開発者');    // Placeholder (e.g., '一般ユーザー', '開発者')
-const userPlanDisplay = ref('Free');  // Placeholder (e.g., 'Free', 'Pro')
-
-// --- Simulate fetching user info --- 
-// In a real app, fetch this data after login or on component mount
-onMounted(() => {
-  console.log('SidebarNav: Simulating fetch user role and plan...');
-  // Replace with actual data fetching logic
-  // userEmail.value = fetchedUserData.email;
-  // userRoleDisplay.value = fetchedUserData.isDeveloper ? '開発者' : '一般ユーザー';
-  // userPlanDisplay.value = fetchedUserData.planName; // Should be 'Free' or 'Pro'
+// --- Computed Properties for Display --- 
+const userRoleDisplay = computed(() => {
+  if (!payload.user) return '';
+  switch (payload.user.role) {
+    case 'ADMINISTRATOR': return '管理者';
+    case 'DEVELOPER': return '開発者';
+    case 'USER': return 'ユーザー';
+    default: return payload.user.role; // Unknown role
+  }
 });
 
+const userPlanDisplay = computed(() => {
+  if (!payload.user) return '';
+  // プラン名に応じて表示を調整 (例: 'pro' -> 'Pro')
+  // 必要に応じて他のプラン名も追加
+  const plan = payload.user.planName.toLowerCase();
+  if (plan === 'free') return 'Free';
+  if (plan === 'pro') return 'Pro';
+  if (plan === 'premium') return 'Premium';
+  return payload.user.planName; // Capitalize or return as is
+});
+
+// --- Props and Emits for v-list open state ---
 const props = defineProps<{ opened: string[] }>();
 const emit = defineEmits(['update:opened']);
 
@@ -97,9 +140,25 @@ const internalOpen = computed({
   set: (value) => emit('update:opened', value)
 });
 
-const handleSignOut = () => {
-  console.log('Sign out clicked');
-  alert('サインアウトしました。');
+// --- Methods ---
+const handleSignOut = async () => {
+  const { $storage } = useNuxtApp();
+  console.log('Signing out...');
+  try {
+    // Remove the access token from storage
+    $storage.removeItem('access_token');
+    
+    // Optionally, show a success message (can be removed if redirection is enough)
+    // alert('サインアウトしました。'); 
+
+    // Redirect to the home page after sign out
+    await navigateTo('/');
+    // You might want to force a reload to ensure state is fully cleared
+    // window.location.reload(); 
+  } catch (error) {
+    console.error('Error during sign out:', error);
+    alert('サインアウト中にエラーが発生しました。');
+  }
 };
 </script>
 

@@ -30,6 +30,7 @@
                   single-line
                   hide-details
                   density="compact"
+                  @update:model-value="debouncedFetchApps"
                 ></v-text-field>
               </v-col>
             </v-row>
@@ -37,7 +38,7 @@
             <!-- Data Table -->
             <v-data-table
               :headers="headers"
-              :items="filteredApps" 
+              :items="apps" 
               :items-per-page="itemsPerPage"
               @update:items-per-page="updateItemsPerPage($event)"
               :sort-by="sortBy"
@@ -49,7 +50,7 @@
               loading-text="データを読み込み中..."
               :hover="true"
               items-per-page-text="表示行数"
-               :items-per-page-options="itemsPerPageOptions"
+              :items-per-page-options="itemsPerPageOptions"
             >
                <template v-slot:item.status="{ item }">
                 <v-chip :color="getStatusColor(item.status)" density="compact" label>
@@ -63,6 +64,16 @@
                   条件に一致するアプリが見つかりません。
                </template>
             </v-data-table>
+
+            <div class="pa-4 d-flex justify-center">
+              <v-pagination
+                v-if="totalPages > 1"
+                v-model="currentPage"
+                :length="totalPages"
+                rounded="circle"
+                @update:model-value="fetchApps"
+              ></v-pagination>
+            </div>
           </v-card>
         </v-col>
       </v-row>
@@ -82,6 +93,7 @@
   
   const router = useRouter();
   const route = useRoute();
+  const { $api } = useNuxtApp();
   
   type SortItem = { key: string; order: 'asc' | 'desc' };
   
@@ -89,110 +101,136 @@
   const search = ref(route.query.q as string || '');
   const selectedStatus = ref<string | null>(route.query.status as string || null); // App status filter
   const itemsPerPage = ref(Number(route.query.limit) || 10);
+  const currentPage = ref(Number(route.query.page) || 1);
   const initialSortBy: SortItem[] = route.query.sort_by
       ? [{ key: route.query.sort_by as string, order: (route.query.sort_order || 'asc') as 'asc' | 'desc' }]
-      : [{ key: 'id', order: 'asc' }]; // Default sort by ID
+      : [{ key: 'createdAt', order: 'desc' }]; // Default sort by createdAt desc
   const sortBy = ref<SortItem[]>(initialSortBy);
   
   const loading = ref(false);
+  const apps = ref([]);
+  const totalItems = ref(0);
   
   type ReadonlyHeaders = VDataTable['$props']['headers'];
   
   const headers: ReadonlyHeaders = [
     { title: 'ID', key: 'id', align: 'start', width: 80 },
-    { title: '名前', key: 'name', align: 'start', sortable: false },
-    { title: '作成者', key: 'authorName', align: 'start', sortable: false },
-    { title: 'ステータス', key: 'status', align: 'center', width: 120, sortable: false },
-    { title: '作成日', key: 'createdAt', align: 'start', width: 150 },
+    { title: '名前', key: 'name', align: 'start', sortable: true },
+    { title: '作成者', key: 'creator.name', align: 'start', sortable: true },
+    { title: 'ステータス', key: 'status', align: 'center', width: 120, sortable: true },
+    { title: '作成日', key: 'createdAt', align: 'start', width: 150, sortable: true },
     { title: 'アクション', key: 'actions', sortable: false, align: 'end', width: 100 },
   ];
   
   // Options for app status select
   const statusOptions = ref([
-      { title: '公開', value: 'published' },
-      { title: '下書き', value: 'draft' },
-      { title: 'アーカイブ', value: 'archived' },
+      { title: '公開', value: 'PUBLISHED' },
+      { title: '下書き', value: 'DRAFT' },
+      { title: 'アーカイブ', value: 'ARCHIVED' },
+      { title: '非公開', value: 'PRIVATE' },
+      { title: '停止中', value: 'SUSPENDED' },
   ]);
-  
-  // Interface for app data
+
+  // APIから取得したアプリデータの型定義
   interface App {
     id: number;
     name: string;
-    authorName: string;
-    description: string;
-    thumbnailUrl?: string;
-    subImageUrls?: string[];
-    status: 'published' | 'draft' | 'archived';
-    isSubscriptionOnly: boolean;
-    appUrl?: string;
+    creator: {
+      id: number;
+      name: string;
+      email?: string;
+      avatarUrl?: string | null;
+    };
+    description?: string;
+    thumbnailUrl?: string | null;
+    status: string;
+    categoryId?: number | null;
+    category?: {
+      id: number;
+      name: string;
+    } | null;
     createdAt: string;
+    updatedAt: string;
+    _count?: {
+      ratings: number;
+      bookmarks: number;
+    };
   }
   
-  // Generate sample app data
-  const generateSampleApps = (count: number): App[] => {
-    const appsList: App[] = [];
-    const appNames = ['顧客管理システム', '在庫追跡ツール', 'プロジェクトボード', '請求書ジェネレータ', '社内Wiki', 'イベントカレンダー', '簡易ブログエンジン', 'タスクランナー', 'URL短縮サービス', '画像リサイザー'];
-    const authors = ['管理ユーザーA', '管理ユーザーB', 'システム', '田中 太郎', '佐藤 花子'];
-    const statuses: ('published' | 'draft' | 'archived')[] = ['published', 'published', 'draft', 'archived'];
-  
-    for (let i = 1; i <= count; i++) {
-      const name = `${appNames[Math.floor(Math.random() * appNames.length)]} #${i}`;
-      const authorName = authors[Math.floor(Math.random() * authors.length)];
-      const description = `これは ${name} のサンプル説明文です。様々な機能を提供します。`;
-      const status = statuses[Math.floor(Math.random() * statuses.length)];
-      const isSubscriptionOnly = Math.random() < 0.3;
-      const randomDay = Math.floor(Math.random() * 30) + 1;
-      const randomMonth = Math.floor(Math.random() * 12) + 1;
-      const createdAt = `2023-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`;
-      const thumbnailUrl = Math.random() > 0.2 ? `https://placehold.jp/80x80.png?text=Thumb+${i}` : undefined;
-      const appUrl = Math.random() < 0.7 ? `https://example.com/app/${i}` : undefined;
-      
-      const subImageUrls: string[] = [];
-      const numSubImages = Math.floor(Math.random() * 4);
-      for (let j = 0; j < numSubImages; j++) {
-          if (Math.random() > 0.3) {
-             subImageUrls.push(`https://placehold.jp/80x80.png?text=Sub+${i}-${j+1}`);
-          }
-      }
-  
-      appsList.push({
-        id: i,
-        name,
-        authorName,
-        description,
-        thumbnailUrl,
-        subImageUrls,
-        status,
-        isSubscriptionOnly,
-        appUrl,
-        createdAt,
-      });
-    }
-    return appsList;
-  };
-  
-  const apps = ref<App[]>(generateSampleApps(35)); // Generate 35 sample apps
-  
-  // Computed property to filter apps
-  const filteredApps = computed(() => {
-    return apps.value.filter(app => {
-      const statusMatch = !selectedStatus.value || app.status === selectedStatus.value;
-      const searchMatch = !search.value ||
-                          app.name.toLowerCase().includes(search.value.toLowerCase()) ||
-                          app.description.toLowerCase().includes(search.value.toLowerCase());
-      return statusMatch && searchMatch;
-    });
+  // ページネーション関連の計算値
+  const totalPages = computed(() => {
+    return Math.ceil(totalItems.value / itemsPerPage.value);
   });
+
+  // API呼び出し（データフェッチ）
+  const fetchApps = async () => {
+    loading.value = true;
+    
+    try {
+      // APIリクエストパラメータ構築
+      const params: Record<string, any> = {
+        page: currentPage.value,
+        limit: itemsPerPage.value,
+      };
+      
+      // 検索条件があれば追加
+      if (search.value) params.search = search.value;
+      if (selectedStatus.value) params.status = selectedStatus.value;
+      
+      // ソート条件があれば追加
+      if (sortBy.value.length > 0 && sortBy.value[0].key) {
+        params.sortBy = sortBy.value[0].key;
+        params.sortOrder = sortBy.value[0].order;
+      }
+
+      // API呼び出し
+      const { data: response } = await $api.get('/admin/apps', {
+        params,
+      });
+      
+      // レスポンス処理
+      if (response) {
+        apps.value = response.data;
+        totalItems.value = response.total || 0;
+      } else {
+        showError('予期しないAPIレスポンス形式です');
+        apps.value = [];
+        totalItems.value = 0;
+      }
+      
+      // URLクエリパラメータ更新
+      updateQueryParameters();
+    } catch (error: any) {
+      showError(error.response?.data?.message || 'アプリ情報の取得に失敗しました');
+      apps.value = [];
+      totalItems.value = 0;
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  // 検索時のデバウンス処理
+  let debounceTimeout: NodeJS.Timeout | null = null;
+  const debouncedFetchApps = () => {
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      currentPage.value = 1; // 検索時は1ページ目に戻す
+      fetchApps();
+    }, 300);
+  };
   
   // Function to update URL query parameters
   const updateQueryParameters = () => {
-    const query: Record<string, any> = {};
+    const query: Record<string, any> = {
+      page: currentPage.value,
+      limit: itemsPerPage.value
+    };
+    
     if (selectedStatus.value) query.status = selectedStatus.value;
-    if (itemsPerPage.value !== 10) query.limit = itemsPerPage.value;
     if (search.value) query.q = search.value;
   
     const currentSort = sortBy.value[0];
-    if (currentSort && (currentSort.key !== 'id' || currentSort.order !== 'asc')) {
+    if (currentSort) {
        query.sort_by = currentSort.key;
        query.sort_order = currentSort.order;
     }
@@ -203,7 +241,10 @@
   };
   
   // Watch filters and sorting
-  watch([selectedStatus, search, sortBy], updateQueryParameters, { deep: true });
+  watch([selectedStatus], () => {
+    currentPage.value = 1; // ステータス変更時は1ページ目に戻す
+    fetchApps();
+  });
   
   // Items per page options and handler
   const itemsPerPageOptions = [
@@ -214,33 +255,54 @@
   
   const updateItemsPerPage = (value: number) => {
     itemsPerPage.value = value;
-    updateQueryParameters();
+    currentPage.value = 1; // ページサイズ変更時は1ページ目に戻す
+    fetchApps();
   };
   
   // Sort handler
   const updateSortBy = (newSortBy: SortItem[]) => {
     sortBy.value = newSortBy;
+    fetchApps();
   };
   
   // Status display helpers
-  const getStatusColor = (status: App['status']): string => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
-      case 'published': return 'green';
-      case 'draft': return 'orange';
-      case 'archived': return 'grey';
+      case 'PUBLISHED': return 'green';
+      case 'DRAFT': return 'orange';
+      case 'ARCHIVED': return 'grey';
+      case 'PRIVATE': return 'blue';
+      case 'SUSPENDED': return 'red';
       default: return 'grey';
     }
   };
   
-  const getStatusText = (status: App['status']): string => {
-      const option = statusOptions.value.find(o => o.value === status);
-      return option ? option.title : status;
+  const getStatusText = (status: string): string => {
+    switch (status) {
+      case 'PUBLISHED': return '公開';
+      case 'DRAFT': return '下書き';
+      case 'ARCHIVED': return 'アーカイブ';
+      case 'PRIVATE': return '非公開';
+      case 'SUSPENDED': return '停止中';
+      default: return status;
+    }
   };
   
   // Function to navigate to the edit page
   const goToEditPage = (app: App) => {
     router.push(`/admin/apps/${app.id}/edit`);
   };
+
+  // エラー表示ヘルパー
+  const showError = (message: string) => {
+    console.error(message);
+    // TODO: エラー表示のUIを追加（例：スナックバー）
+  };
+
+  // ページ読み込み時にデータをフェッチ
+  onMounted(() => {
+    fetchApps();
+  });
 
   </script>
   

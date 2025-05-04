@@ -1,5 +1,6 @@
 import vuetify, { transformAssetUrls } from 'vite-plugin-vuetify';
 export default defineNuxtConfig({
+  devtools: { enabled: true },
   ssr: false,
 
   build: {
@@ -8,7 +9,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL,
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
       appEnv: process.env.APP_ENV,
     },
   },

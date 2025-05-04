@@ -1,62 +1,108 @@
 <template>
-  <v-container>
-    <PageTitle title="新規管理者登録" />
+  <v-container fluid>
+    <PageTitle 
+      title="新規管理者登録" 
+      :back-button="true" 
+      back-to="/admin/administrators" 
+    />
+    
+    <v-alert v-if="error" type="error" class="mb-4" closable>
+      {{ error }}
+    </v-alert>
+    
     <v-row justify="center">
-      <v-col cols="12" md="8" lg="6">
-        <v-card variant="outlined">
+      <v-col cols="12">
+        <v-card variant="outlined" class="mb-4">
           <v-card-text>
             <v-form ref="newAdminForm" @submit.prevent="createAdmin">
-              <v-text-field
-                v-model="newAdmin.name"
-                label="名前"
-                :rules="[rules.required]"
-                variant="outlined"
-                density="compact"
-                class="mb-4"
-              ></v-text-field>
-              <v-text-field
-                v-model="newAdmin.email"
-                label="メールアドレス"
-                type="email"
-                :rules="[rules.required, rules.email]"
-                variant="outlined"
-                density="compact"
-                class="mb-4"
-              ></v-text-field>
-              <v-text-field
-                v-model="newAdmin.password"
-                label="パスワード"
-                type="password"
-                :rules="[rules.required, rules.minLength(8)]"
-                variant="outlined"
-                density="compact"
-                class="mb-4"
-              ></v-text-field>
-              <v-text-field
-                v-model="passwordConfirm"
-                label="パスワード（確認）"
-                type="password"
-                :rules="[rules.required, rules.passwordMatch]"
-                variant="outlined"
-                density="compact"
-                class="mb-4"
-              ></v-text-field>
-              <!-- Add Role selection if needed -->
-              <!-- <v-select
-                v-model="newAdmin.role"
-                :items="roleOptions"
-                label="役割"
-                variant="outlined"
-                density="compact"
-                class="mb-4"
-              ></v-select> -->
-
-              <v-btn type="submit" color="primary" block :loading="isSubmitting">登録する</v-btn>
+              <v-row>
+                <!-- 左側: 基本情報 -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="newAdmin.name"
+                    label="名前 *"
+                    :rules="[rules.required]"
+                    variant="outlined"
+                    class="mb-3"
+                  ></v-text-field>
+                  
+                  <v-text-field
+                    v-model="newAdmin.email"
+                    label="メールアドレス *"
+                    type="email"
+                    :rules="[rules.required, rules.email]"
+                    variant="outlined"
+                    class="mb-3"
+                  ></v-text-field>
+                </v-col>
+                
+                <!-- 右側: パスワード設定 -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="newAdmin.password"
+                    label="パスワード *"
+                    type="password"
+                    :rules="[rules.required, rules.minLength(8)]"
+                    variant="outlined"
+                    class="mb-3"
+                  ></v-text-field>
+                  
+                  <v-text-field
+                    v-model="passwordConfirm"
+                    label="パスワード（確認） *"
+                    type="password"
+                    :rules="[rules.required, rules.passwordMatch]"
+                    variant="outlined"
+                    class="mb-3"
+                  ></v-text-field>
+                </v-col>
+              </v-row>
             </v-form>
           </v-card-text>
+          <v-divider></v-divider>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn 
+              variant="outlined" 
+              color="grey" 
+              class="me-4" 
+              :disabled="isSubmitting" 
+              @click="cancel"
+            >
+              キャンセル
+            </v-btn>
+            <v-btn 
+              type="submit" 
+              color="primary" 
+              variant="elevated" 
+              :loading="isSubmitting" 
+              :disabled="isSubmitting"
+              @click="createAdmin"
+            >
+              登録する
+            </v-btn>
+          </v-card-actions>
         </v-card>
       </v-col>
     </v-row>
+    
+    <!-- スナックバー -->
+    <v-snackbar
+      v-model="snackbar.show"
+      :color="snackbar.color"
+      :timeout="3000"
+      location="top"
+    >
+      {{ snackbar.text }}
+      <template v-slot:actions>
+        <v-btn
+          variant="text"
+          @click="snackbar.show = false"
+        >
+          閉じる
+        </v-btn>
+      </template>
+    </v-snackbar>
   </v-container>
 </template>
 
@@ -64,22 +110,41 @@
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import PageTitle from '~/components/PageTitle.vue';
+import { UserStatus } from '~/constants/user-status';
+import type { UserStatusType } from '~/constants/user-status';
 
 definePageMeta({
   layout: 'admin',
 });
 
 const router = useRouter();
-const newAdminForm = ref<any>(null); // For form validation
+const { $api } = useNuxtApp();
+const newAdminForm = ref<any>(null);
 const isSubmitting = ref(false);
+const error = ref<string | null>(null);
+
+// スナックバー状態
+const snackbar = reactive({
+  show: false,
+  text: '',
+  color: 'success'
+});
 
 // --- Form Data ---
-const newAdmin = reactive({
+interface AdminFormData {
+  name: string;
+  email: string;
+  password: string;
+  status: UserStatusType;
+}
+
+const newAdmin = reactive<AdminFormData>({
   name: '',
   email: '',
   password: '',
-  // role: 'admin', // Default role if implemented
+  status: UserStatus.ACTIVE,
 });
+
 const passwordConfirm = ref('');
 
 // --- Validation Rules ---
@@ -90,35 +155,58 @@ const rules = {
   passwordMatch: (value: string) => value === newAdmin.password || 'パスワードが一致しません。',
 };
 
+// ヘルパー関数
+const showError = (message: string): void => {
+  snackbar.text = message;
+  snackbar.color = 'error';
+  snackbar.show = true;
+  error.value = message;
+};
+
+const showSuccess = (message: string): void => {
+  snackbar.text = message;
+  snackbar.color = 'success';
+  snackbar.show = true;
+};
+
+// キャンセル処理
+const cancel = (): void => {
+  router.push('/admin/administrators');
+};
+
 // --- Methods ---
 const createAdmin = async () => {
   if (!newAdminForm.value) return;
+  
   const { valid } = await newAdminForm.value.validate();
 
   if (valid) {
     isSubmitting.value = true;
+    error.value = null;
+    
     try {
-      // TODO: Implement API call to create the admin user
-      console.log('Creating admin:', { ...newAdmin }); // Log data (remove password in real app)
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-
-      // Use snackbar/toast in a real app for feedback
-      // showSnackbar('管理者を登録しました。');
-      router.push('/admin/administrators'); // Redirect to admin list page
-    } catch (error) {
-      console.error('Failed to create admin:', error);
-      // showSnackbar('管理者の登録に失敗しました。', 'error');
-      alert('管理者の登録に失敗しました。'); // Placeholder
+      // API呼び出し
+      await $api.post('/admin/administrators', newAdmin);
+      
+      // 成功メッセージ表示
+      showSuccess('管理者を登録しました');
+      
+      // 一覧ページへリダイレクト（タイミングを少し遅らせる）
+      setTimeout(() => {
+        router.push('/admin/administrators');
+      }, 1500);
+    } catch (error: any) {
+      // エラー処理
+      showError(error.response?.data?.message || '管理者の登録に失敗しました');
     } finally {
       isSubmitting.value = false;
     }
-  } else {
-    console.log('Admin creation form validation failed');
   }
 };
-
 </script>
 
 <style scoped>
-/* Add styles if needed */
+.v-text-field.v-input--disabled .v-field__input {
+  color: rgba(0, 0, 0, 0.7) !important;
+}
 </style> 

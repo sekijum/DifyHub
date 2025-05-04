@@ -3,122 +3,324 @@
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  relationMode = "prisma"
 }
 
 // --- Enums ---
 
 enum Role {
-  ADMINISTRATORS      // 全体管理者 (ユーザー、プラン、設定、全アプリ等を管理)
-  DEVELOPER  // アプリ管理者 (全てのアプリを管理)
-  USER       // 一般ユーザー
+  ADMINISTRATOR // 全体管理者
+  DEVELOPER      // アプリ開発者
+  USER           // 一般ユーザー
+}
+
+enum DeveloperRequestStatus {
+  PENDING  // 申請中
+  APPROVED // 承認済
+  REJECTED // 却下
+}
+
+enum AppStatus {
+  DRAFT      // 下書き
+  PUBLISHED  // 公開中
+  ARCHIVED   // アーカイブ済み
+  PRIVATE    // 非公開
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE     // 有効
+  CANCELED   // キャンセル済み
+  INCOMPLETE // 未完了 (支払い失敗など)
+  PAST_DUE   // 支払い期日超過
+}
+
+enum NotificationLevel {
+  INFO    // 情報
+  SUCCESS // 成功
+  WARNING // 警告
+  ERROR   // エラー
+}
+
+// プランステータス
+enum PlanStatus {
+  ACTIVE    // 有効
+  PRIVATE   // 非公開
+  SUSPENDED // 停止
+}
+
+// 評価タイプ (高評価/低評価)
+enum RatingType {
+  LIKE    // 高評価
+  DISLIKE // 低評価
+}
+
+// 月次収益ステータス
+enum MonthlyRevenueStatus {
+  UNPAID     // 未精算
+  PROCESSING // 支払い処理中
+  PAID       // 支払い済み
+}
+
+// 出金履歴ステータス
+enum PayoutStatus {
+  PENDING    // 申請中
+  PROCESSING // 処理中
+  COMPLETED  // 完了
+  FAILED     // 失敗
+  CANCELED   // キャンセル済み
 }
 
 enum UserStatus {
   ACTIVE
-  INACTIVE
+  SUSPENDED
 }
-
-enum AppStatus {
-  PUBLISHED
-  DRAFT
-  ARCHIVED
-}
-
-enum PlanStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum NotificationTarget {
-  ALL
-  PRO_USERS
-  FREE_USERS
-}
-
 
 // --- Models ---
 
 model User {
-  id           Int        @id @default(autoincrement())
-  name         String
-  email        String     @unique
-  password     String     // Remember to hash passwords before saving!
-  role         Role       @default(USER)
-  status       UserStatus @default(ACTIVE)
-  planId       Int?       // Optional relation to Plan
-  plan         Plan?      @relation(fields: [planId], references: [id])
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                   Int                @id @default(autoincrement())
+  email                String             @unique
+  name                 String
+  password             String
+  avatarUrl            String?
+  bio                  String?            // 自己紹介カラムを追加 (任意)
+  role                 Role               @default(USER)
+  planName             String             @default("free") // Plan.name へのFK
+  plan                 Plan               @relation(fields: [planName], references: [name])
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  status               UserStatus         @default(ACTIVE) // status フィールド削除
+  developerName        String?            @db.VarChar(100)      // 開発者としての表示名 (追加)
 
-  createdApps  App[]      @relation("CreatedBy")
+  developerRequests    DeveloperRequest[]
+  createdApps          App[]                 @relation("AppCreator")
+  ratings              Rating[]
+  bookmarkFolders      BookmarkFolder[]
+  bookmarks            Bookmark[]
+  subscription         Subscription?
+  monthlyRevenues      MonthlyRevenue[]      @relation("DeveloperRevenue")
+  payoutAccount        PayoutAccount?        
+  payoutHistories      PayoutHistory[]       @relation("DeveloperPayouts")
 
-  @@index([planId])
+  @@index([email])
+  @@index([planName]) // Reverted index back to planName
 }
 
-model Plan {
-  id        Int        @id @default(autoincrement())
-  name      String     @unique
-  price     Int        // Store price in the smallest currency unit (e.g., cents/yen)
-  credits   Int        // Monthly credits
-  status    PlanStatus @default(INACTIVE)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+model DeveloperRequest {
+  id           Int               @id @default(autoincrement())
+  userId       Int               // @unique を削除
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason String
+  portfolioUrl String?
+  status       DeveloperRequestStatus @default(PENDING)
+  resultReason String?           // 申請結果の理由（承認または却下の理由）
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
-  users     User[]     // Users subscribed to this plan
+  @@index([userId]) // userId にインデックスを追加
 }
 
 model App {
-  id                 Int        @id @default(autoincrement())
-  name               String
-  description        String?    @db.Text // Use TEXT for potentially longer descriptions
-  thumbnailUrl       String?
-  appUrl             String?    // URL for the app itself
-  status             AppStatus  @default(DRAFT)
-  isSubscriptionOnly Boolean    @default(false)
-  creatorId          Int
-  creator            User       @relation("CreatedBy", fields: [creatorId], references: [id])
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  id           Int        @id @default(autoincrement())
+  name         String
+  description  String?    @db.Text
+  thumbnailUrl String?
+  appUrl       String     // アプリのURLを追加 (必須)
+  creatorId    Int
+  creator      User       @relation("AppCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  status       AppStatus  @default(DRAFT)
+  categoryId   Int
+  category     Category?  @relation(fields: [categoryId], references: [id])
+  isSubscriptionLimited Boolean @default(false) // サブスク限定フラグを追加
+  usageCount   Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  subImages          AppImage[] // Relation to sub-images
+  ratings      Rating[]   // このアプリへの評価 (高評価/低評価)
+  bookmarks    Bookmark[] // このアプリをブックマークしたユーザー
+  subImages    AppSubImage[] // サブ画像
+  tags         Tag[]      // アプリに付けられたタグ (多対多: Prismaが中間テーブルを自動生成)
 
   @@index([creatorId])
+  @@index([status])
+  @@index([categoryId])
+  @@index([usageCount]) // 利用回数でソートする場合などに備えてインデックスを追加
 }
 
-model AppImage {
+// カテゴリー
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  apps        App[]
+}
+
+// タグ
+model Tag {
   id        Int      @id @default(autoincrement())
-  url       String   // URL of the sub-image
-  order     Int      // To maintain the order of images
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  apps      App[]    // このタグを持つアプリ (多対多: Prismaが中間テーブルを自動生成)
+}
+
+// アプリサブ画像
+model AppSubImage {
+  id        Int      @id @default(autoincrement())
   appId     Int
-  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade) // Cascade delete if app is deleted
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  order     Int      // 表示順
   createdAt DateTime @default(now())
 
   @@index([appId])
-  @@index([appId, order]) // Index for ordering within an app
+}
+
+// アプリ評価 (高評価/低評価)
+model Rating {
+  userId    Int
+  appId     Int
+  type      RatingType // LIKE (高評価) or DISLIKE (低評価)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, appId]) // ユーザーは1アプリに1評価のみ
+  @@index([appId])
+}
+
+// ブックマークフォルダ
+model BookmarkFolder {
+  id        Int        @id @default(autoincrement())
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  isDefault Boolean    @default(false) // デフォルトフォルダかどうか
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  bookmarks Bookmark[]
+
+  @@index([userId])
+}
+
+model Bookmark {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  appId            Int
+  bookmarkFolderId Int?
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app              App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  folder           BookmarkFolder? @relation(fields: [bookmarkFolderId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, appId, bookmarkFolderId])
+  @@index([userId])
+  @@index([appId])
+  @@index([bookmarkFolderId])
+}
+
+model Plan {
+  name          String   @id // Reverted name to be the primary key
+  priceMonthly  Int
+  features      Json
+  status        PlanStatus @default(PRIVATE) // ステータスを追加
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users         User[]
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   Int                @id @default(autoincrement())
+  userId               Int                @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planName             String             // Plan.name へのFK
+  plan                 Plan               @relation(fields: [planName], references: [name])
+  status               SubscriptionStatus @default(INCOMPLETE)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([planName]) // Reverted index back to planName
 }
 
 model Notification {
-  id           Int                @id @default(autoincrement())
-  title        String
-  content      String             @db.Text
-  target       NotificationTarget @default(ALL)
-  startAt      DateTime?          // Optional: Start display date/time
-  endAt        DateTime?          // Optional: End display date/time (null means indefinite)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id              Int               @id @default(autoincrement())
+  title           String
+  content         String            @db.Text
+  level           NotificationLevel @default(INFO)
+  startAt         DateTime         // 表示開始日時
+  endAt           DateTime?         // 表示終了日時 (null可)
+  isVisibleOnTop  Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  @@index([target])
-  @@index([startAt])
-  @@index([endAt])
+  @@index([startAt, endAt])
+  @@index([isVisibleOnTop])
 }
 
+// --- Optional: Add models for Authentication (e.g., Session, VerificationToken) if needed ---
+
+// --- 開発者向けモデル ---
+
+// 月次収益レポート
+model MonthlyRevenue {
+  id          Int                  @id @default(autoincrement())
+  developerId Int
+  developer   User                 @relation("DeveloperRevenue", fields: [developerId], references: [id], onDelete: Cascade)
+  period      DateTime             // 対象月 (月初の日付を格納。yyyy-mm形式はアプリ側で整形)
+  amount      Int                  // 収益額 (最小通貨単位)
+  status      MonthlyRevenueStatus @default(UNPAID)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([developerId, period])
+  @@index([developerId])
+  @@index([status])
+}
+
+// 出金口座
+model PayoutAccount {
+  id             Int      @id @default(autoincrement())
+  developerId    Int      @unique // User (Developer) と 1対1
+  user           User     @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  accountDetails Json     // 口座情報 (暗号化推奨)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model PayoutHistory {
+  id              Int          @id @default(autoincrement())
+  developerId     Int
+  developer       User         @relation("DeveloperPayouts", fields: [developerId], references: [id], onDelete: Cascade)
+  requestedAmount Int          // 申請額 (最小通貨単位)
+  fee             Int          // 手数料 (最小通貨単位)
+  transferAmount  Int          // 振込額 (申請額 - 手数料)
+  status          PayoutStatus @default(PENDING)
+  requestedAt     DateTime     @default(now()) // 申請日時
+  processedAt     DateTime?    // 処理完了/失敗日時
+  transactionId   String?
+  notes           String?      @db.Text
+
+  @@index([developerId])
+  @@index([status])
+}
+
+// サイト全体の設定
 model Setting {
-  key       String   @id // e.g., "SITE_TITLE", "MAINTENANCE_MODE"
-  value     String   @db.Text // Store diverse values as strings
-  updatedAt DateTime @updatedAt
+  id              Int      @id @default(1) // 固定ID (通常1レコードのみ)
+  maintenanceMode Boolean  @default(false)  // メンテナンスモード
+  commissionRate  Float    @default(0.1)    // 手数料率 (例: 0.1 = 10%)
+  payoutFee       Int      @default(0)      // 振込手数料 (最小通貨単位)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

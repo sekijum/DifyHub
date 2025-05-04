@@ -1,35 +1,25 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
+import * as express from 'express';
+import { ExpressAdapter } from '@nestjs/platform-express';
+
+const server = express();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
   
-  // グローバルパイプの設定
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
+  app.use(helmet());
+  app.enableCors({
+    origin: 'http://localhost:3000',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
-  // CORSの有効化
-  app.enableCors();
+  app.useGlobalPipes(new ValidationPipe());
 
-  // Swaggerの設定
-  const config = new DocumentBuilder()
-    .setTitle('BondageZog API')
-    .setDescription('YouTubeクローンアプリのAPI')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
-
-  // サーバー起動
-  await app.listen(3000);
-  console.log(`アプリケーションは http://localhost:3000 で実行中です`);
+  await app.listen(8080, '0.0.0.0');
 }
 bootstrap(); 

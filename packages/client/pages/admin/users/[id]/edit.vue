@@ -1,255 +1,307 @@
 <template>
-  <v-container>
-    <PageTitle :title="`ユーザー編集: ${editableUser.name || '...'}`" />
-    <v-form ref="editForm">
-      <v-card variant="outlined">
+  <v-container fluid>
+    <PageTitle 
+      :title="`ユーザー詳細: ${user?.name || '...'}`" 
+      :back-button="true" 
+      back-to="/admin/users" 
+    />
+
+    <v-alert v-if="error" type="error" class="mb-4" closable>
+      {{ error }}
+    </v-alert>
+
+    <v-card v-if="loading" class="pa-4">
+      <v-skeleton-loader type="card" />
+    </v-card>
+
+    <v-form v-if="user" @submit.prevent="updateUserStatus">
+      <v-card variant="outlined" class="mb-4">
         <v-card-text>
-          <v-container>
-            <v-row>
-              <!-- Name -->
-              <v-col cols="12" md="6">
-                <v-text-field
-                  v-model="editableUser.name"
-                  label="名前 *"
-                  required
-                  variant="outlined"
-                  density="compact"
-                  :rules="[rules.required]"
-                ></v-text-field>
-              </v-col>
-
-              <!-- Email -->
-              <v-col cols="12" md="6">
-                <v-text-field
-                  v-model="editableUser.email"
-                  label="メールアドレス *"
-                  required
-                  type="email"
-                  variant="outlined"
-                  density="compact"
-                  :rules="[rules.required, rules.emailFormat]"
-                ></v-text-field>
-              </v-col>
-
-              <!-- Plan -->
-              <v-col cols="12" md="6">
-                 <v-select
-                   v-model="editableUser.plan"
-                   :items="planOptions"
-                   item-title="title"
-                   item-value="value"
-                   label="プラン *"
-                   required
-                   variant="outlined"
-                   density="compact"
-                   :rules="[rules.required]"
-                   readonly 
-                   hint="プランの変更は現在サポートされていません"
-                   persistent-hint
-                 ></v-select>
-              </v-col>
-
-              <!-- Status -->
-              <v-col cols="12" md="6">
-                <v-select
-                  v-model="editableUser.status"
-                  :items="statusOptions"
-                  item-title="title"
-                  item-value="value"
-                  label="ステータス *"
-                  required
-                  variant="outlined"
-                  density="compact"
-                  :rules="[rules.required]"
-                ></v-select>
-              </v-col>
-
-               <!-- RegisteredAt (Readonly) -->
-               <v-col cols="12" md="6">
-                 <v-text-field
-                   v-model="editableUser.registeredAt"
-                   label="登録日"
-                   readonly
-                   variant="outlined"
-                   density="compact"
-                 ></v-text-field>
-               </v-col>
-
-            </v-row>
-          </v-container>
-          <small>*必須入力項目</small>
+          <v-row>
+            <!-- 左側: 基本情報 -->
+            <v-col cols="12" md="6">
+              <h3 class="text-h6 mb-4">基本情報</h3>
+              
+              <v-text-field
+                v-model="user.id"
+                label="ID"
+                disabled
+                variant="outlined"
+                bg-color="grey-lighten-4"
+                class="mb-3"
+              ></v-text-field>
+              
+              <v-text-field
+                v-model="user.name"
+                label="名前"
+                disabled
+                variant="outlined"
+                bg-color="grey-lighten-4"
+                class="mb-3"
+              ></v-text-field>
+              
+              <v-text-field
+                v-model="user.email"
+                label="メールアドレス"
+                disabled
+                variant="outlined"
+                bg-color="grey-lighten-4"
+                class="mb-3"
+              ></v-text-field>
+              
+              <v-text-field
+                v-model="formattedDate"
+                label="登録日"
+                disabled
+                variant="outlined"
+                bg-color="grey-lighten-4"
+              ></v-text-field>
+            </v-col>
+            
+            <!-- 右側: アカウント設定 -->
+            <v-col cols="12" md="6">
+              <h3 class="text-h6 mb-4">アカウント設定</h3>
+              
+              <v-text-field
+                v-model="planDisplay"
+                label="プラン"
+                disabled
+                variant="outlined"
+                bg-color="grey-lighten-4"
+                hint="プランの変更は現在サポートされていません"
+                persistent-hint
+                class="mb-3"
+              ></v-text-field>
+              
+              <v-select
+                v-model="user.status"
+                :items="statusOptions"
+                item-title="title"
+                item-value="value"
+                label="ステータス"
+                variant="outlined"
+                :disabled="saving"
+                :hint="getStatusHint(user.status)"
+                persistent-hint
+              ></v-select>
+              
+              <v-alert
+                v-if="hasStatusChanged"
+                type="info"
+                variant="tonal"
+                border="start"
+                density="compact"
+                class="mt-3"
+              >
+                ステータスが変更されています。保存ボタンをクリックして変更を適用してください。
+              </v-alert>
+            </v-col>
+          </v-row>
         </v-card-text>
+        
         <v-divider></v-divider>
+        
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn variant="text" @click="cancelEdit">
+          <v-btn
+            variant="outlined"
+            color="grey"
+            class="me-4"
+            :disabled="saving"
+            @click="navigateToUsersList"
+          >
             キャンセル
           </v-btn>
-          <v-btn color="primary" variant="elevated" @click="saveUser" :loading="isSaving">
+          <v-btn
+            color="primary"
+            variant="elevated"
+            type="submit"
+            :loading="saving"
+            :disabled="!hasStatusChanged || saving"
+          >
             保存
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-form>
-     <!-- Snackbar for feedback -->
-     <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
-        {{ snackbar.text }}
-        <template v-slot:actions>
-            <v-btn variant="text" @click="snackbar.show = false">閉じる</v-btn>
-        </template>
-     </v-snackbar>
+
+    <v-snackbar
+      v-model="snackbar.show"
+      :color="snackbar.color"
+      :timeout="3000"
+      location="top"
+    >
+      {{ snackbar.text }}
+      <template v-slot:actions>
+        <v-btn variant="text" @click="snackbar.show = false">閉じる</v-btn>
+      </template>
+    </v-snackbar>
   </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import PageTitle from '~/components/PageTitle.vue';
+import type { UserStatusType } from '~/constants/user-status';
+import { UserStatus } from '~/constants/user-status';
 
+// ページメタデータ
 definePageMeta({
   layout: 'admin',
 });
 
+// ユーザーデータの型定義
+interface UserData {
+  id: number;
+  email: string;
+  name: string;
+  status: UserStatusType;
+  planName: string | null;
+  createdAt: string;
+  avatarUrl?: string | null;
+}
+
+// スナックバーの型定義
+interface SnackbarState {
+  show: boolean;
+  text: string;
+  color: 'success' | 'error' | 'info' | 'warning';
+}
+
+// ステータスオプションの型定義
+interface StatusOption {
+  title: string;
+  value: UserStatusType;
+}
+
+const { $api } = useNuxtApp();
 const route = useRoute();
 const router = useRouter();
-const userId = Number(route.params.id);
+const userId = route.params.id as string;
 
-// Type definition for User
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  plan: 'free' | 'plus' | 'pro';
-  status: 'active' | 'inactive';
-  registeredAt: string;
-}
+// 状態管理
+const user = ref<UserData | null>(null);
+const loading = ref<boolean>(true);
+const error = ref<string | null>(null);
+const saving = ref<boolean>(false);
+const originalStatus = ref<UserStatusType | null>(null);
+const snackbar = reactive<SnackbarState>({ 
+  show: false, 
+  text: '', 
+  color: 'success' 
+});
 
-// --- Form and State ---
-const editForm = ref<any>(null);
-const editableUser = reactive<Partial<User>>({});
-const isSaving = ref(false);
-const snackbar = reactive({ show: false, text: '', color: 'success' });
+// ステータスオプション
+const statusOptions: StatusOption[] = [
+  { title: 'アクティブ', value: UserStatus.ACTIVE },
+  { title: '停止中', value: UserStatus.SUSPENDED },
+];
 
-// Options for selects (reuse from list page or define centrally)
-const planOptions = ref([
-    { title: 'Free', value: 'free' },
-    { title: 'Plus', value: 'plus' },
-    { title: 'Pro', value: 'pro' },
-]);
-const statusOptions = ref([
-    { title: '有効', value: 'active' },
-    { title: '停止中', value: 'inactive' },
-]);
+// ステータスが変更されたかを確認
+const hasStatusChanged = computed<boolean>(() => {
+  if (!user.value || originalStatus.value === null) return false;
+  return user.value.status !== originalStatus.value;
+});
 
-// --- Validation Rules ---
-const rules = {
-  required: (value: string) => !!value || '必須項目です。',
-  emailFormat: (value: string) => /.+@.+\..+/.test(value) || '有効なメールアドレスを入力してください。',
-};
-
-// --- Fetch User Data (Simulation) ---
-const fetchUserData = (id: number): User | null => {
-    // Simulate finding user data
-    const sampleUsers = generateSampleUsers(40); // Use the same generator
-    const found = sampleUsers.find(u => u.id === id);
-    return found || null;
-}
-
-onMounted(() => {
-  // TODO: Replace this with actual API call to fetch user data by userId
-  console.log(`Fetching data for user ID: ${userId}`);
-  const existingUser = fetchUserData(userId);
-
-  if (existingUser) {
-    Object.assign(editableUser, existingUser);
-  } else {
-    console.error(`User with ID ${userId} not found.`);
-    snackbar.text = 'ユーザーが見つかりません。';
-    snackbar.color = 'error';
-    snackbar.show = true;
-    setTimeout(() => router.push('/admin/users'), 2000);
+// 日付フォーマット
+const formattedDate = computed<string>(() => {
+  if (!user.value?.createdAt) return '';
+  try {
+    return new Date(user.value.createdAt).toLocaleString('ja-JP', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  } catch {
+    return user.value.createdAt;
   }
 });
 
+// プラン表示
+const planDisplay = computed<string>(() => {
+  return user.value?.planName || '未設定';
+});
 
-// --- Actions ---
-const cancelEdit = () => {
+// ステータスに応じたヒントを取得
+const getStatusHint = (status: UserStatusType): string => {
+  switch (status) {
+    case UserStatus.ACTIVE:
+      return 'アクティブ状態ではユーザーはシステムを利用できます';
+    case UserStatus.SUSPENDED:
+      return '停止状態ではユーザーはログインできなくなります';
+    default:
+      return '';
+  }
+};
+
+// ユーザー情報を取得
+const fetchUserData = async (): Promise<void> => {
+  loading.value = true;
+  error.value = null;
+  
+  try {
+    const { data } = await $api.get<UserData>(`/admin/users/${userId}`);
+    user.value = data;
+    originalStatus.value = data.status;
+  } catch (err) {
+    error.value = 'ユーザー情報の取得に失敗しました。';
+  } finally {
+    loading.value = false;
+  }
+};
+
+// ユーザーステータスを更新
+const updateUserStatus = async (): Promise<void> => {
+  if (!hasStatusChanged.value || !user.value) return;
+  
+  saving.value = true;
+  error.value = null;
+  
+  try {
+    await $api.patch(`/admin/users/${userId}/status`, {
+      status: user.value.status
+    });
+    originalStatus.value = user.value.status;
+    
+    showSnackbar('ユーザー情報を更新しました', 'success');
+    
+    // 成功したら少し待ってから一覧へ戻る
+    setTimeout(() => {
+      navigateToUsersList();
+    }, 1500);
+  } catch (err) {
+    error.value = 'ユーザー情報の更新に失敗しました。';
+    showSnackbar('ユーザー情報の更新に失敗しました', 'error');
+  } finally {
+    saving.value = false;
+  }
+};
+
+// スナックバー表示
+const showSnackbar = (text: string, color: SnackbarState['color']): void => {
+  snackbar.text = text;
+  snackbar.color = color;
+  snackbar.show = true;
+};
+
+// ユーザー一覧ページへ戻る
+const navigateToUsersList = (): void => {
   router.push('/admin/users');
 };
 
-const saveUser = async () => {
-  if (!editForm.value) return;
-  const { valid } = await editForm.value.validate();
-  if (!valid) return;
-
-  isSaving.value = true;
-
-  // Construct payload (remove fields that shouldn't be updated if necessary)
-  const payload = {
-      id: editableUser.id,
-      name: editableUser.name,
-      email: editableUser.email,
-      // plan: editableUser.plan, // Plan change might not be allowed
-      status: editableUser.status,
-  };
-
-  try {
-    // --- Placeholder for Update Logic ---
-    console.log('Saving user data (simulation):', payload);
-    // TODO: Replace with actual API call (e.g., PUT /api/users/{id})
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate save
-
-    snackbar.text = 'ユーザー情報を保存しました。';
-    snackbar.color = 'success';
-    snackbar.show = true;
-    setTimeout(() => router.push('/admin/users'), 1500); // Redirect after delay
-
-  } catch (error) {
-    console.error("Error during user save simulation:", error);
-    snackbar.text = '保存中にエラーが発生しました。';
-    snackbar.color = 'error';
-    snackbar.show = true;
-  } finally {
-    isSaving.value = false;
+// ステータス変更時の警告監視
+watch(() => user.value?.status, (newStatus, oldStatus) => {
+  if (newStatus !== oldStatus && newStatus === UserStatus.SUSPENDED) {
+    showSnackbar('停止状態に変更すると、ユーザーはログインできなくなります', 'warning');
   }
-};
+}, { deep: true });
 
-// --- Helper: Sample Data Generation (copied from list page for simulation) ---
-// IMPORTANT: In a real app, fetch data, don't regenerate sample data here.
-const generateSampleUsers = (count: number): User[] => {
-  const usersList: User[] = [];
-  const firstNames = ['山田', '佐藤', '鈴木', '高橋', '田中', '渡辺', '伊藤', '山本', '中村', '小林'];
-  const lastNames = ['太郎', '花子', '一郎', '次郎', '三郎', '良子', '健太', '優子', '大輔', '明美'];
-  const domains = ['example.com', 'sample.net', 'mail.org', 'test.co.jp', 'dummy.jp'];
-  const plans: User['plan'][] = ['free', 'plus', 'pro'];
-  const statuses: User['status'][] = ['active', 'active', 'active', 'inactive'];
-
-  for (let i = 1; i <= count; i++) {
-    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    const name = `${firstName} ${lastName}`;
-    const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}@${domains[Math.floor(Math.random() * domains.length)]}`;
-    const plan = plans[Math.floor(Math.random() * plans.length)];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const randomDay = Math.floor(Math.random() * 30) + 1;
-    const randomMonth = Math.floor(Math.random() * 12) + 1;
-    const registeredAt = `2023-${String(randomMonth).padStart(2, '0')}-${String(randomDay).padStart(2, '0')}`;
-
-    usersList.push({
-      id: i,
-      name,
-      email,
-      plan,
-      status,
-      registeredAt,
-    });
-  }
-  return usersList;
-};
-
-
+// コンポーネントマウント時にユーザー情報を取得
+onMounted(fetchUserData);
 </script>
 
 <style scoped>
-/* Add styles if needed */
+.v-text-field.v-input--disabled .v-field__input {
+  color: rgba(0, 0, 0, 0.7) !important;
+}
 </style> 

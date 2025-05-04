@@ -217,25 +217,65 @@
           <v-card-text>
             <v-form ref="bankAccountForm" @submit.prevent="saveBankAccount">
               <v-row>
-                <v-col cols="12" md="6"> <!-- Already responsive -->
+                <!-- Bank Code Input -->
+                <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="bankCode"
+                    label="金融機関コード (4桁) *"
+                    variant="outlined"
+                    density="compact"
+                    maxlength="4"
+                    counter="4"
+                    :rules="[rules.required, rules.numeric, rules.exactLength(4)]"
+                    hint="金融機関コードを入力すると銀行名が自動入力されます"
+                    persistent-hint
+                    placeholder="例: 0001"
+                  ></v-text-field>
+                </v-col>
+
+                <!-- Bank Name (Readonly) -->
+                <v-col cols="12" md="6">
                   <v-text-field
                     v-model="bankAccount.bankName"
                     label="銀行名 *"
                     variant="outlined"
                     density="compact"
-                    :rules="[rules.required]"
+                    readonly 
+                    :rules="[rules.required]" 
                   ></v-text-field>
                 </v-col>
-                <v-col cols="12" md="6"> <!-- Already responsive -->
+
+                <!-- Branch Code Input -->
+                 <v-col cols="12" md="6">
+                  <v-text-field
+                    v-model="branchCode"
+                    label="支店コード (3桁) *"
+                    variant="outlined"
+                    density="compact"
+                    maxlength="3"
+                    counter="3"
+                    :rules="[rules.required, rules.numeric, rules.exactLength(3)]"
+                    :disabled="!bankCode || bankCode.length !== 4 || !bankAccount.bankName"
+                    hint="支店コードを入力すると支店名が自動入力されます"
+                    persistent-hint
+                    placeholder="例: 101"
+                  ></v-text-field>
+                </v-col>
+
+                <!-- Branch Name (Readonly) -->
+                <v-col cols="12" md="6">
                   <v-text-field
                     v-model="bankAccount.branchName"
                     label="支店名 *"
                     variant="outlined"
                     density="compact"
+                    readonly
                     :rules="[rules.required]"
                   ></v-text-field>
                 </v-col>
-                <v-col cols="12" md="6"> <!-- Already responsive -->
+
+                <!-- Existing Account Type, Number, Holder Name fields -->
+                <v-col cols="12" md="6"> 
                   <v-select
                     v-model="bankAccount.accountType"
                     :items="accountTypeOptions"
@@ -243,18 +283,20 @@
                     variant="outlined"
                     density="compact"
                     :rules="[rules.required]"
+                    placeholder="選択してください"
                   ></v-select>
                 </v-col>
-                <v-col cols="12" md="6"> <!-- Already responsive -->
+                <v-col cols="12" md="6">
                   <v-text-field
                     v-model="bankAccount.accountNumber"
                     label="口座番号 *"
                     variant="outlined"
                     density="compact"
                     :rules="[rules.required, rules.numeric]"
+                    placeholder="例: 1234567"
                   ></v-text-field>
                 </v-col>
-                <v-col cols="12"> <!-- Already full width -->
+                <v-col cols="12">
                   <v-text-field
                     v-model="bankAccount.accountHolderName"
                     label="口座名義人 (カタカナ) *"
@@ -263,6 +305,7 @@
                     :rules="[rules.required, rules.katakana]"
                     hint="全角カタカナで入力してください"
                     persistent-hint
+                    placeholder="例: ﾃﾞｨﾌｨｰ ﾀﾛｳ"
                   ></v-text-field>
                 </v-col>
               </v-row>
@@ -270,6 +313,8 @@
                 type="submit" 
                 color="primary" 
                 class="mt-4"
+                :loading="isSavingBankAccount" 
+                :disabled="isSavingBankAccount"
               >
                 口座情報を保存
               </v-btn>
@@ -442,18 +487,25 @@ interface WithdrawalHistoryEntry {
 }
 
 // --- State ---
-const totalWithdrawnAmount = ref(123456); 
-const monthlyEarnings = ref<MonthlyEarning[]>([]); 
-const selectedMonthsToWithdraw = ref<string[]>([]); 
+const totalWithdrawnAmount = ref(123456);
+const monthlyEarnings = ref<MonthlyEarning[]>([]);
+const selectedMonthsToWithdraw = ref<string[]>([]);
 
 const isWithdrawDialogOpen = ref(false);
 const isWithdrawing = ref(false);
 const isBankAccountConfirmed = ref(false);
 const snackbar = reactive({ show: false, text: '', color: 'success' });
-const isBankAccountRegistered = ref(false); 
+const isBankAccountRegistered = ref(false);
 const bankAccountForm = ref<any>(null);
-const isSavingBankAccount = ref(true);
-const isLoading = ref(true); 
+const isSavingBankAccount = ref(false);
+const isLoading = ref(true);
+
+// Bank code and branch code refs
+const bankCode = ref('');
+const branchCode = ref('');
+const isBankLoading = ref(false);
+const isBranchLoading = ref(false);
+
 // Use the BankAccountInfo type for the reactive bankAccount
 const bankAccount = reactive<BankAccountInfo>({
     bankName: '',
@@ -463,7 +515,7 @@ const bankAccount = reactive<BankAccountInfo>({
     accountHolderName: ''
 });
 const accountTypeOptions = ['普通', '当座'];
-const withdrawalHistory = ref<WithdrawalHistoryEntry[]>([]); 
+const withdrawalHistory = ref<WithdrawalHistoryEntry[]>([]);
 
 // --- Withdrawal Status Options ---
 interface WithdrawalStatusOption { title: string; value: WithdrawalStatus; }
@@ -674,7 +726,58 @@ const rules = {
     maxValue: (max: number) => (value: number) => value <= max || `出金可能額（¥${max.toLocaleString()}）を超えています。`,
     numeric: (value: string) => /^[0-9]+$/.test(value) || '半角数字で入力してください。',
     katakana: (value: string) => /^[ァ-ヶー　]+$/.test(value) || '全角カタカナで入力してください。',
+    exactLength: (length: number) => (value: string) => (value && value.length === length) || `ちょうど${length}桁で入力してください。`,
 };
+
+// --- Watchers for Bank/Branch Code --- 
+watch(bankCode, async (newBankCode) => {
+  // Clear dependent fields when bank code changes
+  bankAccount.bankName = '';
+  branchCode.value = ''; 
+  bankAccount.branchName = '';
+
+  if (newBankCode && newBankCode.length === 4) {
+    isBankLoading.value = true;
+    try {
+      const url = `https://bank.teraren.com/banks/${newBankCode}.json`;
+      // Use $fetch for API call
+      const response = await $fetch<{ name: string }>(url);
+      bankAccount.bankName = response.name;
+    } catch (error) {
+      console.error('Failed to fetch bank name:', error);
+      bankAccount.bankName = ''; // Clear on error
+      // Optionally show a snackbar message
+      snackbar.text = '金融機関コードが見つかりません。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    } finally {
+      isBankLoading.value = false;
+    }
+  }
+});
+
+watch(branchCode, async (newBranchCode) => {
+  // Clear branch name when branch code changes
+  bankAccount.branchName = ''; 
+
+  if (bankCode.value && bankCode.value.length === 4 && newBranchCode && newBranchCode.length === 3) {
+    isBranchLoading.value = true;
+    try {
+      const url = `https://bank.teraren.com/banks/${bankCode.value}/branches/${newBranchCode}.json`;
+      const response = await $fetch<{ name: string }>(url);
+      bankAccount.branchName = response.name;
+    } catch (error) {
+      console.error('Failed to fetch branch name:', error);
+      bankAccount.branchName = ''; // Clear on error
+      // Optionally show a snackbar message
+      snackbar.text = '支店コードが見つかりません。';
+      snackbar.color = 'warning';
+      snackbar.show = true;
+    } finally {
+      isBranchLoading.value = false;
+    }
+  }
+});
 
 // --- Methods --- 
 // Updated openWithdrawDialog to reset confirmation
@@ -800,8 +903,14 @@ const saveBankAccount = async () => {
 
     if (valid) {
         isSavingBankAccount.value = true;
-        console.log('Saving bank account info:', bankAccount);
+        console.log('Saving bank account info:', {
+            bankCode: bankCode.value, // Include codes if needed by backend
+            branchCode: branchCode.value, 
+            ...bankAccount // Spread the rest of the account info
+        });
         try {
+            // Replace with actual API call to save bank info
+            // Example: await $api.put('/developer/bank-account', { bankCode: bankCode.value, ...bankAccount });
             await new Promise(resolve => setTimeout(resolve, 1000)); 
             snackbar.text = '出金口座情報を保存しました。';
             snackbar.color = 'success';
@@ -817,6 +926,9 @@ const saveBankAccount = async () => {
         }
     } else {
         console.log('Bank account form validation failed');
+        snackbar.text = '入力内容を確認してください。'; // Add feedback on validation failure
+        snackbar.color = 'warning';
+        snackbar.show = true;
     }
 };
 
@@ -872,13 +984,55 @@ onMounted(async () => {
   monthlyEarnings.value = generateSampleMonthlyEarnings(12); 
   withdrawalHistory.value = generateSampleWithdrawals(10); 
 
-  await new Promise(resolve => setTimeout(resolve, 200)); 
-  const fetchedBankAccount = {
-    bankName: 'サンプル銀行', branchName: '本店営業部', accountType: '普通',
-    accountNumber: '1234567', accountHolderName: 'ﾃﾞｨﾌｨｰ ﾀﾛｳ'
-  };
-  isBankAccountRegistered.value = true; 
-  Object.assign(bankAccount, fetchedBankAccount);
+  // --- Load Existing Bank Info (Removed Default/Sample Data) --- 
+  try {
+    // Replace with actual API call to fetch bank info
+    // Example: const fetchedData = await $api.get('/developer/bank-account');
+    // Simulate API call delay - remove if using real API
+    await new Promise(resolve => setTimeout(resolve, 100)); 
+    const fetchedData = null; // Assume no data initially or fetch returns null/undefined
+
+    if (fetchedData) {
+        // This block would populate fields if real data is fetched
+        bankCode.value = fetchedData.bankCode || '';
+        branchCode.value = fetchedData.branchCode || '';
+        Object.assign(bankAccount, {
+            bankName: fetchedData.bankName || '',
+            branchName: fetchedData.branchName || '',
+            accountType: fetchedData.accountType || '普通',
+            accountNumber: fetchedData.accountNumber || '',
+            accountHolderName: fetchedData.accountHolderName || ''
+        });
+        isBankAccountRegistered.value = true; 
+    } else {
+        // Reset fields if no data is fetched
+        bankCode.value = '';
+        branchCode.value = '';
+        bankAccount.bankName = '';
+        bankAccount.branchName = '';
+        bankAccount.accountType = '普通'; // Keep default type or set to null if preferred
+        bankAccount.accountNumber = '';
+        bankAccount.accountHolderName = '';
+        isBankAccountRegistered.value = false;
+    }
+
+  } catch (error) {
+      console.error("Failed to load bank account info:", error);
+      isBankAccountRegistered.value = false; // Assume not registered on error
+      // Clear fields on error as well
+      bankCode.value = '';
+      branchCode.value = '';
+      bankAccount.bankName = '';
+      bankAccount.branchName = '';
+      bankAccount.accountType = '普通';
+      bankAccount.accountNumber = '';
+      bankAccount.accountHolderName = '';
+      // Optionally show error message
+      // snackbar.text = '口座情報の読み込みに失敗しました。';
+      // snackbar.color = 'error';
+      // snackbar.show = true;
+  }
+  // -----------------------------
 
   isLoading.value = false;
 });

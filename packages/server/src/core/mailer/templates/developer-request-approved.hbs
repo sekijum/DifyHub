@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>開発者申請が承認されました</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .header {
+      background-color: #4caf50;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      border-radius: 5px 5px 0 0;
+    }
+    .content {
+      padding: 20px;
+      border: 1px solid #eee;
+      border-top: none;
+      border-radius: 0 0 5px 5px;
+    }
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      color: #888;
+      font-size: 12px;
+    }
+    a.button {
+      display: inline-block;
+      padding: 10px 20px;
+      background-color: #4caf50;
+      color: white;
+      text-decoration: none;
+      border-radius: 3px;
+      margin: 10px 0;
+    }
+    .reason-box {
+      background-color: #f9f9f9;
+      border-left: 4px solid #4caf50;
+      padding: 15px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>開発者申請が承認されました！</h1>
+  </div>
+  <div class="content">
+    <p>{{name}} 様</p>
+    
+    <p>DifyHubへの開発者申請が<strong>承認</strong>されましたのでお知らせします。</p>
+    
+    <div class="reason-box">
+      <h3>承認理由</h3>
+      <p>{{resultReason}}</p>
+    </div>
+    
+    <p>これにより、DifyHubプラットフォームでアプリを公開することができるようになりました。新しく開発者権限が付与され、以下の機能が利用可能になりました：</p>
+    
+    <ul>
+      <li>アプリの作成と公開</li>
+      <li>アプリの収益化とデータ分析</li>
+      <li>ユーザーフィードバックの管理</li>
+    </ul>
+    
+    <p>開発者ダッシュボードにアクセスして、早速最初のアプリを公開してみましょう！</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="{{newAppUrl}}" class="button">新しいアプリを作成する</a>
+    </div>
+    
+    <p>開発者として活躍されることを楽しみにしています。お困りのことがあれば、いつでもサポートチームにお問い合わせください。</p>
+    
+    <p>DifyHubをご利用いただきありがとうございます。</p>
+    
+    <p>DifyHub チーム</p>
+  </div>
+  <div class="footer">
+    <p>このメールは自動送信されています。返信はできませんのでご了承ください。</p>
+    <p>&copy; 2023 DifyHub. All rights reserved.</p>
+  </div>
+</body>
+</html> 

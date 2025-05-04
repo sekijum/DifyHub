@@ -16,79 +16,71 @@
         </v-alert>
 
         <!-- Show signup form only if registration is allowed -->
-        <v-card v-if="allowRegistration" variant="outlined">
+        <v-card v-if="allowRegistration" variant="outlined" :loading="isLoading">
           <v-card-text class="pa-6">
-            <v-form @submit.prevent="handleSignUp">
+            <!-- エラーメッセージ表示 -->
+            <v-alert
+              v-if="errorMessage"
+              type="error"
+              variant="outlined"
+              prominent
+              class="mb-6"
+              border="start"
+              closable
+              @click:close="errorMessage = null"
+            >
+              {{ errorMessage }}
+            </v-alert>
 
-              <!-- Avatar Selection -->
-              <div class="d-flex justify-center mb-6">
-                <div class="avatar-container" style="position: relative; width: 100px; height: 100px;">
-                  <v-avatar size="100" color="grey-lighten-3">
-                    <v-img :src="avatarPreviewUrl || defaultAvatar" alt="Avatar Preview"></v-img>
-                  </v-avatar>
-                  <v-btn
-                    icon
-                    size="small"
-                    color="primary"
-                    style="position: absolute; bottom: -5px; right: -5px;"
-                    @click="triggerFileInput"
-                    title="アバターを選択"
-                  >
-                    <v-icon>mdi-camera-plus-outline</v-icon>
-                  </v-btn>
-                </div>
-              </div>
-              <input 
-                 type="file"
-                 ref="fileInput"
-                 accept="image/*" 
-                 @change="onFileChange"
-                 style="display: none;" 
-              />
+            <v-form @submit.prevent="handleSignUp">
 
               <v-text-field
                 label="名前"
                 name="name"
                 type="text"
-                v-model="name"
+                v-model="formData.name"
                 required
                 class="mb-4"
                 variant="outlined"
+                :disabled="isLoading"
               ></v-text-field>
 
               <v-text-field
                 label="メールアドレス"
                 name="email"
                 type="email"
-                v-model="email"
+                v-model="formData.email"
                 required
                 class="mb-4"
                 variant="outlined"
+                :disabled="isLoading"
               ></v-text-field>
 
               <v-text-field
                 label="パスワード"
                 name="password"
                 type="password"
-                v-model="password"
+                v-model="formData.password"
                 required
                 hint="パスワードは8文字以上"
                 class="mb-4"
                 variant="outlined"
+                :disabled="isLoading"
               ></v-text-field>
 
                <v-text-field
                 label="パスワード（確認）"
                 name="passwordConfirm"
                 type="password"
-                v-model="passwordConfirm"
+                v-model="formData.passwordConfirm"
                 required
-                :rules="[passwordConfirmationRule]" 
+                :rules="[passwordConfirmationRule]"
                 variant="outlined"
+                :disabled="isLoading"
               ></v-text-field>
             </v-form>
              <v-card-actions class="justify-center mt-4 pa-0">
-               <v-btn type="submit" color="primary" :disabled="!isFormValid" @click="handleSignUp" block size="large">サインアップ</v-btn>
+               <v-btn type="submit" color="primary" :disabled="!isFormValid || isLoading" @click="handleSignUp" block size="large">サインアップ</v-btn>
              </v-card-actions>
             <div class="text-center mt-6">
               <nuxt-link to="/signin">既にアカウントをお持ちの場合</nuxt-link>
@@ -101,9 +93,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, reactive } from 'vue';
 import PageTitle from '~/components/PageTitle.vue';
 import { useRouter } from 'vue-router';
+import { ref as vueRef } from 'vue';
+import { useNuxtApp } from '#app';
 
 // Simulate fetching the registration setting
 // TODO: Replace this with an actual API call to fetch settings
@@ -122,91 +116,76 @@ onMounted(() => {
   }, 500); // Simulate network delay
 });
 
-const name = ref('');
-const email = ref('');
-const password = ref('');
-const passwordConfirm = ref('');
-const avatarFile = ref<File | null>(null); // To store the selected file
-const avatarPreviewUrl = ref<string | null>(null); // For image preview
-const fileInput = ref<HTMLInputElement | null>(null);
-const defaultAvatar = 'https://placehold.jp/100x100.png?text=Avatar'; // Default placeholder
+// --- State Refs & Reactive Objects ---
+const formData = reactive({
+  name: '',
+  email: '',
+  password: '',
+  passwordConfirm: '',
+});
+const isLoading = vueRef(false);
+const errorMessage = vueRef<string | null>(null);
 
 const router = useRouter();
+const nuxtApp = useNuxtApp();
+const { $api, $storage } = nuxtApp;
 
 // Basic password confirmation rule
 const passwordConfirmationRule = computed(() => {
-  return () => (password.value === passwordConfirm.value) || 'パスワードが一致しません';
+  return () => (formData.password === formData.passwordConfirm) || 'パスワードが一致しません';
 });
 
 // Simple form validation check (can be expanded)
 const isFormValid = computed(() => {
     // Avatar is optional, so not included in validation for now
-    return name.value && email.value && password.value && password.value === passwordConfirm.value;
+    return formData.name && formData.email && formData.password && formData.password === formData.passwordConfirm;
 });
 
-// --- Avatar Selection Methods ---
-const triggerFileInput = () => {
-  console.log('Triggering file input click...');
-  fileInput.value?.click();
-};
+const handleSignUp = async () => {
+  if (!isFormValid.value || isLoading.value) return;
 
-const onFileChange = (event: Event) => {
-  console.log('onFileChange triggered.');
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
+  isLoading.value = true;
+  errorMessage.value = null;
 
-  if (file) {
-    avatarFile.value = file; 
-    console.log('File selected:', file.name, file.type);
-
-    const reader = new FileReader();
-    reader.onloadstart = () => console.log('FileReader: loadstart');
-    reader.onprogress = (e) => console.log(`FileReader: progress ${e.loaded}/${e.total}`);
-    reader.onload = (e) => {
-      console.log('FileReader: load complete.');
-      const result = e.target?.result as string;
-      if (result) {
-          console.log('Assigning result to avatarPreviewUrl (first 100 chars):', result.substring(0, 100));
-          avatarPreviewUrl.value = result;
-          // Force template update check
-          console.log('avatarPreviewUrl value after assignment:', avatarPreviewUrl.value?.substring(0, 100));
-      } else {
-          console.error('FileReader result is empty.');
-      }
+  try {
+    const apiUrl = '/auth/signup';
+    const payload = {
+      email: formData.email,
+      password: formData.password,
+      name: formData.name
     };
-    reader.onerror = (e) => {
-      console.error('FileReader error:', reader.error);
-      alert(`ファイルの読み込み中にエラーが発生しました: ${reader.error?.message}`);
-    };
-    reader.readAsDataURL(file);
-  } else {
-      console.log('No file selected or selection cancelled.');
-      avatarFile.value = null;
-      avatarPreviewUrl.value = null;
+
+    // バックエンドは成功応答で { access_token: string } を含むオブジェクトを返すと仮定
+    const signupResponse = await $api.post<{ access_token: string }>(apiUrl, payload);
+    const signupData = signupResponse.data;
+
+    // レスポンスに access_token が含まれているか確認
+    if (signupData && signupData.access_token) {
+      // アクセストークンを保存
+      // @ts-ignore Nuxt plugin type inference
+      $storage.setItem('access_token', signupData.access_token);
+      // ログイン後のページ（例: /mypage）へリダイレクト
+      router.push('/mypage'); // Redirect to a relevant page after signup
+      // @ts-ignore Nuxt plugin type inference
+      $toast.success(t('signup.success'));
+    } else {
+      // アクセストークンがない場合はエラー
+      console.error('Signup response did not contain access_token:', signupData);
+      // @ts-ignore Nuxt plugin type inference
+      throw new Error(t('signup.errors.generic'));
+    }
+  } catch (error: any) {
+    // サインアップ自体のエラー処理 (例: Email already exists)
+    if (error.response && error.response.data && error.response.data.message) {
+        errorMessage.value = error.response.data.message;
+    } else {
+        errorMessage.value = error.message || 'サインアップ中に予期せぬエラーが発生しました。';
+    }
+     // 念のため関連トークンを削除 (access_tokenのみ)
+     $storage.removeItem('access_token');
+  } finally {
+    isLoading.value = false;
   }
-};
-
-const handleSignUp = () => {
-  if (!isFormValid.value) return;
-  console.log('Attempting sign up with:');
-  console.log('Name:', name.value);
-  console.log('Email:', email.value);
-  console.log('Avatar File:', avatarFile.value ? avatarFile.value.name : 'None');
-
-  // TODO: Implement actual sign-up logic
-  // You'll likely need to use FormData to send the file along with other data
-  // const formData = new FormData();
-  // formData.append('name', name.value);
-  // formData.append('email', email.value);
-  // formData.append('password', password.value);
-  // if (avatarFile.value) {
-  //   formData.append('avatar', avatarFile.value);
-  // }
-  // callSignupApi(formData).then(...)
-
-  // Redirect to OTP verification page after successful signup (simulated)
-  console.log('Signup successful (simulated), redirecting to OTP verification...');
-  router.push('/otp-verify'); 
 };
 
 // Define layout if needed

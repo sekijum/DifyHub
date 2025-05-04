@@ -1,4 +1,4 @@
-export const useStorage = () => {
+export const use$storage = () => {
   const { $storage } = useNuxtApp();
 
   const THREAD_VIEW_HISTORY_KEY = 'thread_view_history';

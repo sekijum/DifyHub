@@ -1,5 +1,3 @@
-import { defineNuxtRouteMiddleware, navigateTo, useState } from '#app';
-
 export default defineNuxtRouteMiddleware((to, from) => {
   // プラグインで定義したメンテナンスモードの状態を取得
   const isMaintenanceMode = useState<boolean>('isMaintenanceMode');
