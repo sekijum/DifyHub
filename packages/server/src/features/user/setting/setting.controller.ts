@@ -1,13 +1,18 @@
-import { Controller, Get } from '@nestjs/common';
-import { Setting } from '@prisma/client';
-import { SettingService } from './setting.service';
+import { Controller, Get } from "@nestjs/common";
+import { SettingService } from "./setting.service";
 
-@Controller('setting')
+/**
+ * システム設定のエンドポイントを提供するコントローラー
+ */
+@Controller("setting")
 export class SettingController {
   constructor(private readonly settingService: SettingService) {}
 
+  /**
+   * システム設定を取得
+   */
   @Get()
-  async findSetting(): Promise<Setting> {
+  findSetting() {
     return this.settingService.findSetting();
   }
-} 
+}

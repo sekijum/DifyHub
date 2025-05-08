@@ -1,16 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, ParseIntPipe, HttpCode, HttpStatus, Query } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { FindUserAppsQueryDto } from './dto/find-user-apps-query.dto';
+import { Controller, Get, Param, ParseIntPipe, Query } from "@nestjs/common";
+import { UsersService } from "./users.service";
+import { FindUserAppListQueryDto } from "./dto";
 
-@Controller('users')
+@Controller("users")
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Get(':id')
-  findOne(
-    @Param('id', ParseIntPipe) id: number,
-    @Query() queryDto: FindUserAppsQueryDto
+  /**
+   * ユーザー詳細とアプリ一覧を取得
+   */
+  @Get(":id")
+  findUserById(
+    @Param("id", ParseIntPipe) id: number,
+    @Query()
+    query: FindUserAppListQueryDto,
   ) {
-    return this.usersService.findOne(id, queryDto);
+    return this.usersService.findUserById(id, query);
   }
-} 
+}

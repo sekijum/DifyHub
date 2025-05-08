@@ -1,109 +1,57 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { App, AppStatus, Prisma } from '@prisma/client';
-import { GetAppsQueryDto } from './dto/get-apps-query.dto';
-import { UpdateAppStatusDto } from './dto/update-app-status.dto';
-import { MailerService } from '@/core/mailer/mailer.service';
-
-// アプリデータと作成者情報を結合した型
-export interface AppWithCreator extends App {
-  creator: {
-    id: number;
-    name: string;
-    email: string;
-    avatarUrl?: string | null;
-  };
-  category?: {
-    id: number;
-    name: string;
-  } | null;
-  _count?: {
-    ratings: number;
-    bookmarks: number;
-  };
-}
-
-// ページネーション結果型
-export interface PaginatedAppsResult {
-  data: AppWithCreator[];
-  total: number;
-}
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+} from "@nestjs/common";
+import { prisma } from "@/core/database/prisma.client";
+import { AppStatus, Prisma } from "@prisma/client";
+import { FindAppListQueryDto, UpdateAppStatusDto } from "./dto";
+import { MailerService } from "@/core/mailer/mailer.service";
+import {
+  createPaginatedResponse,
+  getPaginationParams,
+} from "@/core/utils/pagination.util";
 
 @Injectable()
 export class AdminAppsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly mailerService: MailerService
-  ) {}
+  private readonly logger = new Logger(AdminAppsService.name);
+
+  constructor(private readonly mailerService: MailerService) {}
 
   /**
    * アプリ一覧を取得
    */
-  async findApps(
-    query?: GetAppsQueryDto,
-  ): Promise<PaginatedAppsResult> {
-    // クエリが未定義の場合は空オブジェクトを使用
-    const safeQuery = query || {};
-    
-    // デフォルト値を適用
-    const page = safeQuery.page ?? 1;
-    const limit = safeQuery.limit ?? 10;
-    const status = safeQuery.status;
-    const search = safeQuery.search;
-    const categoryId = safeQuery.categoryId;
-    const sortBy = safeQuery.sortBy ?? 'createdAt';
-    const sortOrder = safeQuery.sortOrder ?? 'desc';
-    
-    const skip = (page - 1) * limit;
+  async findAppList(query?: FindAppListQueryDto) {
+    try {
+      const pagination = getPaginationParams(query);
 
-    // where条件の構築
-    const where: Prisma.AppWhereInput = {};
+      // where条件の構築
+      const where: Prisma.AppWhereInput = {};
 
-    // ステータスによるフィルター
-    if (status) {
-      where.status = status;
-    }
+      if (query.status) {
+        where.status = query.status;
+      }
 
-    // カテゴリーによるフィルター
-    if (categoryId) {
-      where.categoryId = categoryId;
-    }
+      if (query.categoryId) {
+        where.categoryId = query.categoryId;
+      }
 
-    // 検索条件（アプリ名、説明、作成者名）
-    if (search) {
-      where.OR = [
-        {
-          name: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          description: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          creator: {
-            name: {
-              contains: search,
-              mode: 'insensitive',
+      if (pagination.search) {
+        where.OR = [
+          { name: { contains: pagination.search, mode: "insensitive" } },
+          { description: { contains: pagination.search, mode: "insensitive" } },
+          {
+            creator: {
+              name: { contains: pagination.search, mode: "insensitive" },
             },
           },
-        },
-      ];
-    }
+        ];
+      }
 
-    // ソート条件の構築
-    const orderBy: Prisma.AppOrderByWithRelationInput = {
-      [sortBy]: sortOrder,
-    };
-
-    try {
-      // データの取得と総件数のカウント
-      const [apps, total] = await this.prisma.$transaction([
-        this.prisma.app.findMany({
+      const [apps, total] = await prisma.$transaction([
+        prisma.app.findMany({
           where,
           include: {
             creator: {
@@ -127,100 +75,36 @@ export class AdminAppsService {
               },
             },
           },
-          skip,
-          take: limit,
-          orderBy,
+          skip: pagination.skip,
+          take: pagination.take,
+          orderBy: { [pagination.sortBy]: pagination.sortOrder },
         }),
-        this.prisma.app.count({ where }),
+        prisma.app.count({ where }),
       ]);
 
-      return {
-        data: apps as AppWithCreator[],
+      return createPaginatedResponse(
+        apps,
         total,
-      };
+        pagination.page,
+        pagination.limit,
+      );
     } catch (error) {
-      console.error('Error in findApps:', error);
-      return {
-        data: [],
-        total: 0,
-      };
+      this.logger.error(
+        `アプリ一覧取得エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException("アプリ一覧の取得に失敗しました");
     }
   }
 
   /**
    * アプリ詳細を取得
    */
-  async findAppById(id: number): Promise<AppWithCreator> {
-    const app = await this.prisma.app.findUnique({
-      where: { id },
-      include: {
-        creator: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true,
-          },
-        },
-        category: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        tags: true,
-        subImages: {
-          orderBy: {
-            order: 'asc',
-          },
-        },
-        _count: {
-          select: {
-            ratings: true,
-            bookmarks: true,
-          },
-        },
-      },
-    });
-
-    if (!app) {
-      throw new NotFoundException(`アプリ ID ${id} が見つかりません`);
-    }
-
-    return app as AppWithCreator;
-  }
-
-  /**
-   * アプリのステータスを更新
-   */
-  async updateAppStatus(
-    id: number,
-    dto: UpdateAppStatusDto,
-  ): Promise<AppWithCreator> {
-    const { status, resultReason } = dto;
-
-    // アプリの存在確認
-    const existingApp = await this.prisma.app.findUnique({
-      where: { id },
-      include: {
-        creator: true,
-      },
-    });
-
-    if (!existingApp) {
-      throw new NotFoundException(`アプリ ID ${id} が見つかりません`);
-    }
-
-    // 有効なステータス変更かチェック
-    this.validateStatusChange(existingApp.status, status);
-
+  async findAppById(id: number) {
     try {
-      // アプリのステータスを更新
-      const updatedApp = await this.prisma.app.update({
+      const app = await prisma.app.findUniqueOrThrow({
         where: { id },
-        data: { 
-          status,
-        },
         include: {
           creator: {
             select: {
@@ -236,60 +120,122 @@ export class AdminAppsService {
               name: true,
             },
           },
+          tags: true,
+          subImages: {
+            orderBy: {
+              order: "asc",
+            },
+          },
+          _count: {
+            select: {
+              ratings: true,
+              bookmarks: true,
+            },
+          },
         },
       });
-      
-      // ステータス変更通知メールの送信（必要に応じて実装）
-      if (status === AppStatus.PUBLISHED) {
-        try {
-          // アプリ公開通知メール
-          await this.mailerService.sendAppPublishedEmail({
-            email: existingApp.creator.email,
-            name: existingApp.creator.name
-          }, existingApp.name);
-        } catch (error) {
-          console.error('アプリ公開通知メール送信に失敗しました', error);
-          // メール送信失敗は全体の処理を失敗させない
-        }
-      } else if (status === AppStatus.PRIVATE) {
-        try {
-          // アプリ非公開通知メール
-          await this.mailerService.sendAppPrivateEmail({
-            email: existingApp.creator.email,
-            name: existingApp.creator.name
-          }, existingApp.name, resultReason);
-        } catch (error) {
-          console.error('アプリ非公開通知メール送信に失敗しました', error);
-          // メール送信失敗は全体の処理を失敗させない
-        }
-      } else if (status === AppStatus.ARCHIVED) {
-        try {
-          // アプリアーカイブ通知メール
-          await this.mailerService.sendAppArchivedEmail({
-            email: existingApp.creator.email,
-            name: existingApp.creator.name
-          }, existingApp.name);
-        } catch (error) {
-          console.error('アプリアーカイブ通知メール送信に失敗しました', error);
-          // メール送信失敗は全体の処理を失敗させない
-        }
-      } else if (status === AppStatus.SUSPENDED) {
-        try {
-          // アプリ停止通知メール
-          await this.mailerService.sendAppSuspendedEmail({
-            email: existingApp.creator.email,
-            name: existingApp.creator.name
-          }, existingApp.name, resultReason);
-        } catch (error) {
-          console.error('アプリ停止通知メール送信に失敗しました', error);
-          // メール送信失敗は全体の処理を失敗させない
-        }
+
+      return app;
+    } catch (error) {
+      if (error.code === "P2025") {
+        throw new NotFoundException(`アプリ ID ${id} が見つかりません`);
       }
 
-      return updatedApp as AppWithCreator;
+      this.logger.error(
+        `アプリ詳細取得エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException("アプリ詳細の取得に失敗しました");
+    }
+  }
+
+  /**
+   * アプリのステータスを更新
+   */
+  async updateAppStatus(id: number, dto: UpdateAppStatusDto) {
+    try {
+      // アプリの存在確認
+      const existingApp = await prisma.app.findUniqueOrThrow({
+        where: { id },
+        include: {
+          creator: true,
+        },
+      });
+
+      this.validateStatusChange(existingApp.status, dto.status);
+
+      const updatedApp = await prisma.app.update({
+        where: { id },
+        data: { status: dto.status },
+      });
+
+      await this.sendStatusChangeNotification(
+        existingApp.creator.email,
+        existingApp.creator.name,
+        existingApp.name,
+        dto.status,
+        dto.resultReason,
+      );
     } catch (error) {
-      console.error('Error in updateAppStatus:', error);
-      throw new BadRequestException('アプリのステータス更新に失敗しました');
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      if (error.code === "P2025") {
+        throw new NotFoundException(`アプリ ID ${id} が見つかりません`);
+      }
+
+      this.logger.error(
+        `アプリステータス更新エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException(
+        "アプリのステータス更新に失敗しました",
+      );
+    }
+  }
+
+  private async sendStatusChangeNotification(
+    email: string,
+    creatorName: string,
+    appName: string,
+    status: AppStatus,
+    reason?: string,
+  ) {
+    try {
+      const recipient = { email, name: creatorName };
+
+      switch (status) {
+        case AppStatus.PUBLISHED:
+          await this.mailerService.sendAppPublishedEmail(recipient, appName);
+          break;
+        case AppStatus.PRIVATE:
+          await this.mailerService.sendAppPrivateEmail(
+            recipient,
+            appName,
+            reason,
+          );
+          break;
+        case AppStatus.ARCHIVED:
+          await this.mailerService.sendAppArchivedEmail(recipient, appName);
+          break;
+        case AppStatus.SUSPENDED:
+          await this.mailerService.sendAppSuspendedEmail(
+            recipient,
+            appName,
+            reason,
+          );
+          break;
+      }
+    } catch (error) {
+      this.logger.error(
+        `アプリステータス変更通知メール送信エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      // メール送信失敗は全体の処理を失敗させない
     }
   }
 
@@ -297,23 +243,23 @@ export class AdminAppsService {
    * ステータス変更の検証
    * 無効なステータス変更の組み合わせをチェック
    */
-  private validateStatusChange(currentStatus: AppStatus, newStatus: AppStatus): void {
-    // 同じステータスへの変更は許可
+  private validateStatusChange(currentStatus: AppStatus, newStatus: AppStatus) {
     if (currentStatus === newStatus) {
       return;
     }
 
-    // 無効なステータス変更の組み合わせ
     const invalidTransitions: Record<AppStatus, AppStatus[]> = {
-      [AppStatus.DRAFT]: [],  // ドラフトからはどのステータスへも変更可能
-      [AppStatus.PUBLISHED]: [AppStatus.DRAFT], // 公開済みからドラフトへは戻せない
-      [AppStatus.ARCHIVED]: [AppStatus.PUBLISHED], // アーカイブから直接公開へは変更不可
-      [AppStatus.PRIVATE]: [AppStatus.PUBLISHED], // 非公開から直接公開へは変更不可
-      [AppStatus.SUSPENDED]: [AppStatus.PUBLISHED], // 停止から直接公開へは変更不可
+      [AppStatus.DRAFT]: [],
+      [AppStatus.PUBLISHED]: [AppStatus.DRAFT],
+      [AppStatus.ARCHIVED]: [AppStatus.PUBLISHED],
+      [AppStatus.PRIVATE]: [AppStatus.PUBLISHED],
+      [AppStatus.SUSPENDED]: [AppStatus.PUBLISHED],
     };
 
     if (invalidTransitions[currentStatus]?.includes(newStatus)) {
-      throw new BadRequestException(`${currentStatus}から${newStatus}へのステータス変更は許可されていません`);
+      throw new BadRequestException(
+        `${currentStatus}から${newStatus}へのステータス変更は許可されていません`,
+      );
     }
   }
-} 
+}

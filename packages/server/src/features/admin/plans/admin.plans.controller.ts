@@ -8,21 +8,18 @@ import {
   Query,
   Body,
   Param,
-  ParseIntPipe,
   ValidationPipe,
-} from '@nestjs/common';
-import { AdminPlansService, PaginatedPlansResult } from './admin.plans.service';
-import { JwtAuthGuard } from '@/core/auth/guards/jwt-auth.guard';
-import { RolesGuard } from '@/core/auth/guards/roles.guard';
-import { Roles } from '@/core/auth/decorators/roles.decorator';
-import { Role, Plan } from '@prisma/client';
-import { GetPlansQueryDto } from './dto/get-plans-query.dto';
-import { CreatePlanDto } from './dto/create-plan.dto';
-import { UpdatePlanDto } from './dto/update-plan.dto';
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
+import { AdminPlansService } from "./admin.plans.service";
+import { JwtAuthGuard, RolesGuard, Roles } from "@/core/auth";
+import { Role, Plan } from "@prisma/client";
+import { CreatePlanDto, UpdatePlanDto } from "./dto";
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMINISTRATOR)
-@Controller('admin/plans')
+@Controller("admin/plans")
 export class AdminPlansController {
   constructor(private readonly adminPlansService: AdminPlansService) {}
 
@@ -30,20 +27,15 @@ export class AdminPlansController {
    * プラン一覧を取得
    */
   @Get()
-  async getPlans(
-    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
-    query: GetPlansQueryDto,
-  ): Promise<PaginatedPlansResult> {
-    return this.adminPlansService.findPlans(query);
+  async findPlanList() {
+    return this.adminPlansService.findPlanList();
   }
 
   /**
    * プラン詳細を取得
    */
-  @Get(':id')
-  async getPlanById(
-    @Param('id') id: string,
-  ): Promise<Plan> {
+  @Get(":id")
+  async findPlanById(@Param("id") id: string) {
     return this.adminPlansService.findPlanById(id);
   }
 
@@ -51,31 +43,28 @@ export class AdminPlansController {
    * プランを作成
    */
   @Post()
-  async createPlan(
-    @Body(ValidationPipe) createDto: CreatePlanDto,
-  ): Promise<Plan> {
-    return this.adminPlansService.createPlan(createDto);
+  @HttpCode(HttpStatus.CREATED)
+  async createPlan(@Body() createPlanDto: CreatePlanDto) {
+    return this.adminPlansService.createPlan(createPlanDto);
   }
 
   /**
    * プランを更新
    */
-  @Patch(':id')
+  @Patch(":id")
   async updatePlan(
-    @Param('id') id: string,
-    @Body(ValidationPipe) updateDto: UpdatePlanDto,
-  ): Promise<Plan> {
-    return this.adminPlansService.updatePlan(id, updateDto);
+    @Param("id") id: string,
+    @Body() updatePlanDto: UpdatePlanDto,
+  ) {
+    return this.adminPlansService.updatePlan(id, updatePlanDto);
   }
 
   /**
    * プランを削除
    */
-  @Delete(':id')
-  async deletePlan(
-    @Param('id') id: string,
-  ): Promise<{ message: string }> {
+  @Delete(":id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deletePlan(@Param("id") id: string) {
     await this.adminPlansService.deletePlan(id);
-    return { message: 'プランが正常に削除されました' };
   }
-} 
+}

@@ -1,19 +1,20 @@
-import { 
-  IsString, 
-  IsNumber, 
-  IsOptional, 
-  Min, 
-  IsBoolean, 
-  IsInt, 
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  IsBoolean,
+  IsInt,
   IsArray,
-  IsEnum
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { PlanStatus } from '@prisma/client';
+  IsEnum,
+  IsIn,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { PlanStatus } from "@prisma/client";
 
 /**
  * プラン更新DTO
- * 
+ *
  * 注意: 一部フィールドは実際のDBでは features JSON フィールドに格納されます
  * すべてのフィールドはオプションとなっており、指定されたフィールドのみが更新されます
  */
@@ -33,7 +34,34 @@ export class UpdatePlanDto {
   @IsNumber()
   @Min(0)
   @Type(() => Number)
-  price?: number;
+  amount?: number;
+
+  /**
+   * Square連携用カタログID
+   */
+  @IsOptional()
+  @IsString()
+  squareId?: string;
+
+  /**
+   * 通貨コード
+   */
+  @IsOptional()
+  @IsString()
+  @IsIn(["JPY", "USD"], {
+    message: "通貨コードはJPYまたはUSDのみ対応しています",
+  })
+  squareCurrency?: string;
+
+  /**
+   * 課金周期
+   */
+  @IsOptional()
+  @IsString()
+  @IsIn(["MONTHLY", "ANNUAL"], {
+    message: "課金周期はMONTHLYまたはANNUALのみ対応しています",
+  })
+  billingPeriod?: string;
 
   /**
    * 最大アプリ作成数
@@ -86,4 +114,4 @@ export class UpdatePlanDto {
   @IsArray()
   @IsString({ each: true })
   features?: string[];
-} 
+}

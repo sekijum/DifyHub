@@ -1,5 +1,5 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { AppStatus } from '@prisma/client';
+import { IsEnum, IsOptional, IsString } from "class-validator";
+import { AppStatus } from "@prisma/client";
 
 export class UpdateAppStatusDto {
   @IsEnum(AppStatus)
@@ -8,4 +8,4 @@ export class UpdateAppStatusDto {
   @IsOptional()
   @IsString()
   resultReason?: string; // ステータス変更理由
-} 
+}

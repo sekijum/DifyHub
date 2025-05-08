@@ -4,43 +4,49 @@ import {
   Patch,
   UseGuards,
   Body,
-} from '@nestjs/common';
-import { JwtAuthGuard } from '@/core/auth/guards/jwt-auth.guard';
-import { RolesGuard } from '@/core/auth/guards/roles.guard';
-import { Roles } from '@/core/auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
-import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
-import { UserPayload } from '@/core/auth/types/user-payload.interface';
-import { DeveloperProfileService, DeveloperProfile } from './developer.profile.service';
-import { UpdateProfileDto } from './dto/update-profile.dto';
+  ValidationPipe,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "@/core/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@/core/auth/guards/roles.guard";
+import { Roles } from "@/core/auth/decorators/roles.decorator";
+import { Role } from "@prisma/client";
+import { CurrentUser } from "@/core/auth/decorators/current-user.decorator";
+import { UserPayload } from "@/core/auth/types/user-payload.interface";
+import { DeveloperProfileService } from "./developer.profile.service";
+import { UpdateProfileDto } from "./dto";
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.DEVELOPER)
-@Controller('developer/profile')
+@Controller("developer")
 export class DeveloperProfileController {
-  constructor(private readonly developerProfileService: DeveloperProfileService) {}
+  constructor(
+    private readonly developerProfileService: DeveloperProfileService,
+  ) {}
 
   /**
    * 開発者プロフィールを取得
    */
-  @Get()
-  async getProfile(@CurrentUser() user: UserPayload): Promise<DeveloperProfile> {
-    return this.developerProfileService.getProfile(user.userId);
+  @Get("profile")
+  async findById(@CurrentUser() user: UserPayload) {
+    return this.developerProfileService.findById(user.userId);
+  }
+
+  /**
+   * 開発者ダッシュボード統計情報を取得
+   */
+  @Get("dashboard-stats")
+  async getDashboardStats(@CurrentUser() user: UserPayload) {
+    return this.developerProfileService.getDashboardStats(user.userId);
   }
 
   /**
    * 開発者プロフィールを更新
    */
-  @Patch()
-  async updateProfile(
+  @Patch("profile")
+  async update(
     @CurrentUser() user: UserPayload,
-    @Body() updateProfileDto: UpdateProfileDto
-  ): Promise<DeveloperProfile> {
-    console.log('プロフィール更新リクエスト:', updateProfileDto);
-    
-    return this.developerProfileService.updateProfile(
-      user.userId,
-      updateProfileDto
-    );
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    return this.developerProfileService.update(user.userId, updateProfileDto);
   }
-} 
+}

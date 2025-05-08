@@ -1,273 +1,273 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { Notification, NotificationLevel, Prisma } from '@prisma/client';
-import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
-import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
-
-// ページネーション結果型
-export interface PaginatedNotificationsResult {
-  data: Notification[];
-  total: number;
-}
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+} from "@nestjs/common";
+import { prisma } from "@/core/database/prisma.client";
+import { NotificationLevel, Prisma } from "@prisma/client";
+import {
+  FindNotificationListQueryDto,
+  CreateNotificationDto,
+  UpdateNotificationDto,
+} from "./dto";
+import { dayjs } from "@/core/utils/dayjs.util";
+import {
+  createPaginatedResponse,
+  getPaginationParams,
+} from "@/core/utils/pagination.util";
 
 @Injectable()
 export class AdminNotificationsService {
-  constructor(
-    private readonly prisma: PrismaService
-  ) {}
+  private readonly logger = new Logger(AdminNotificationsService.name);
 
   /**
    * お知らせ一覧を取得
    */
-  async findNotifications(
-    query?: GetNotificationsQueryDto,
-  ): Promise<PaginatedNotificationsResult> {
-    // クエリが未定義の場合は空オブジェクトを使用
-    const safeQuery = query || {};
-    
-    // デフォルト値を適用
-    const page = safeQuery.page ?? 1;
-    const limit = safeQuery.limit ?? 10;
-    const search = safeQuery.search;
-    const level = safeQuery.level;
-    const isVisibleOnTop = safeQuery.isVisibleOnTop;
-    const sortBy = safeQuery.sortBy ?? 'startAt';
-    const sortOrder = safeQuery.sortOrder ?? 'desc';
-    
-    const skip = (page - 1) * limit;
-
-    // where条件の構築
-    const where: Prisma.NotificationWhereInput = {};
-
-    // レベルによるフィルター
-    if (level) {
-      where.level = level;
-    }
-
-    // トップ表示フラグによるフィルター
-    if (isVisibleOnTop !== undefined) {
-      where.isVisibleOnTop = isVisibleOnTop;
-    }
-
-    // 現在アクティブなお知らせのみ表示
-    if (safeQuery.isActive) {
-      const now = new Date();
-      where.AND = [
-        { startAt: { lte: now } },
-        {
-          OR: [
-            { endAt: { gte: now } },
-            { endAt: null }
-          ]
-        }
-      ];
-    }
-
-    // 日付範囲によるフィルター
-    if (safeQuery.activeAfter) {
-      where.startAt = where.startAt || {};
-      (where.startAt as any).gte = new Date(safeQuery.activeAfter);
-    }
-
-    if (safeQuery.activeBefore) {
-      where.endAt = where.endAt || {};
-      (where.endAt as any).lte = new Date(safeQuery.activeBefore);
-    }
-
-    // 検索条件（タイトル、内容）
-    if (search) {
-      where.OR = [
-        {
-          title: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          content: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-      ];
-    }
-
-    // ソート条件の構築
-    const orderBy: Prisma.NotificationOrderByWithRelationInput = {
-      [sortBy]: sortOrder,
-    };
-
+  async findNotificationList(query?: FindNotificationListQueryDto) {
     try {
+      // ページネーションパラメータを取得
+      const pagination = getPaginationParams(query);
+
+      // where条件の構築
+      const where: Prisma.NotificationWhereInput = {};
+
+      if (pagination.search) {
+        where.OR = [
+          {
+            title: {
+              contains: pagination.search,
+              mode: "insensitive",
+            },
+          },
+          {
+            content: {
+              contains: pagination.search,
+              mode: "insensitive",
+            },
+          },
+        ];
+      }
+
       // データの取得と総件数のカウント
-      const [notifications, total] = await this.prisma.$transaction([
-        this.prisma.notification.findMany({
+      const [notifications, total] = await prisma.$transaction([
+        prisma.notification.findMany({
           where,
-          skip,
-          take: limit,
-          orderBy,
+          skip: pagination.skip,
+          take: pagination.take,
+          orderBy: { [pagination.sortBy]: pagination.sortOrder },
         }),
-        this.prisma.notification.count({ where }),
+        prisma.notification.count({ where }),
       ]);
 
-      return {
-        data: notifications,
+      return createPaginatedResponse(
+        notifications,
         total,
-      };
+        pagination.page,
+        pagination.limit,
+      );
     } catch (error) {
-      console.error('Error in findNotifications:', error);
-      return {
-        data: [],
-        total: 0,
-      };
+      this.logger.error(
+        `お知らせ一覧取得エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException(
+        "お知らせ一覧の取得に失敗しました",
+      );
     }
   }
 
   /**
    * お知らせ詳細を取得
    */
-  async findNotificationById(id: number): Promise<Notification> {
-    const notification = await this.prisma.notification.findUnique({
-      where: { id },
-    });
+  async findNotificationById(id: number) {
+    try {
+      const notification = await prisma.notification.findUniqueOrThrow({
+        where: { id },
+      });
 
-    if (!notification) {
-      throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
+      return notification;
+    } catch (error) {
+      if (error.code === "P2025") {
+        throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
+      }
+
+      this.logger.error(
+        `お知らせ詳細取得エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException(
+        "お知らせ詳細の取得に失敗しました",
+      );
     }
-
-    return notification;
   }
 
   /**
    * お知らせを作成
    */
-  async createNotification(dto: CreateNotificationDto): Promise<Notification> {
-    const { title, content, level, startAt, endAt, isVisibleOnTop } = dto;
-
-    const startAtDate = new Date(startAt);
-    const endAtDate = endAt ? new Date(endAt) : null;
-    const now = new Date();
-    now.setHours(0, 0, 0, 0); // 今日の0時0分
-
-    // 日付検証: 開始日が今日より前の場合はエラー
-    if (startAtDate < now) {
-      throw new BadRequestException('開始日は今日以降の日付を指定してください');
-    }
-
-    // 日付検証: 終了日が今日より前の場合はエラー
-    if (endAtDate && endAtDate < now) {
-      throw new BadRequestException('終了日は今日以降の日付を指定してください');
-    }
-
-    // 日付検証: 開始日が終了日より後の場合はエラー
-    if (endAtDate && startAtDate > endAtDate) {
-      throw new BadRequestException('開始日は終了日より前の日付を指定してください');
-    }
-
+  async createNotification(dto: CreateNotificationDto) {
     try {
-      return await this.prisma.notification.create({
+      const startAtDate = dayjs(dto.startAt);
+      const endAtDate = dto.endAt ? dayjs(dto.endAt) : null;
+      const today = dayjs().startOf("day");
+
+      // 日付検証: 開始日が今日より前の場合はエラー
+      if (startAtDate.isBefore(today)) {
+        throw new BadRequestException(
+          "開始日は今日以降の日付を指定してください",
+        );
+      }
+
+      // 日付検証: 終了日が今日より前の場合はエラー
+      if (endAtDate && endAtDate.isBefore(today)) {
+        throw new BadRequestException(
+          "終了日は今日以降の日付を指定してください",
+        );
+      }
+
+      // 日付検証: 開始日が終了日より後の場合はエラー
+      if (endAtDate && startAtDate.isAfter(endAtDate)) {
+        throw new BadRequestException(
+          "開始日は終了日より前の日付を指定してください",
+        );
+      }
+
+      await prisma.notification.create({
         data: {
-          title,
-          content,
-          level: level || NotificationLevel.INFO,
-          startAt: startAtDate,
-          endAt: endAtDate,
-          isVisibleOnTop: isVisibleOnTop ?? false,
+          title: dto.title,
+          content: dto.content,
+          level: dto.level || NotificationLevel.INFO,
+          startAt: startAtDate.toDate(),
+          endAt: endAtDate ? endAtDate.toDate() : null,
+          isVisibleOnTop: dto.isVisibleOnTop ?? false,
         },
       });
     } catch (error) {
-      console.error('Error in createNotification:', error);
-      throw new BadRequestException('お知らせの作成に失敗しました');
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        `お知らせ作成エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException("お知らせの作成に失敗しました");
     }
   }
 
   /**
    * お知らせを更新
    */
-  async updateNotification(
-    id: number,
-    dto: UpdateNotificationDto,
-  ): Promise<Notification> {
-    // お知らせの存在確認
-    const existingNotification = await this.prisma.notification.findUnique({
-      where: { id },
-    });
-
-    if (!existingNotification) {
-      throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
-    }
-
-    // 日付変換と検証
-    let startAtDate = existingNotification.startAt;
-    let endAtDate = existingNotification.endAt;
-    const now = new Date();
-    now.setHours(0, 0, 0, 0); // 今日の0時0分
-
-    if (dto.startAt) {
-      startAtDate = new Date(dto.startAt);
-      
-      // 新しい開始日が元の開始日と異なり、今日より前の場合はエラー
-      // 元の開始日が今日より前の場合は、その値を維持することを許可
-      if (startAtDate.getTime() !== existingNotification.startAt.getTime() && startAtDate < now) {
-        throw new BadRequestException('開始日は今日以降の日付を指定してください');
-      }
-    }
-
-    if (dto.endAt) {
-      endAtDate = new Date(dto.endAt);
-      
-      // 終了日が今日より前の場合はエラー
-      if (endAtDate < now) {
-        throw new BadRequestException('終了日は今日以降の日付を指定してください');
-      }
-    } else if (dto.endAt === '') {
-      // 空文字列が来た場合はnullにする（終了日時の削除）
-      endAtDate = null;
-    }
-
-    // 開始日が終了日より後の場合はエラー
-    if (endAtDate && startAtDate > endAtDate) {
-      throw new BadRequestException('開始日は終了日より前の日付を指定してください');
-    }
-
+  async updateNotification(id: number, dto: UpdateNotificationDto) {
     try {
-      return await this.prisma.notification.update({
+      // お知らせの存在確認
+      const existingNotification = await prisma.notification.findUniqueOrThrow({
+        where: { id },
+      });
+
+      // 日付変換と検証
+      let startAtDate = dayjs(existingNotification.startAt);
+      let endAtDate = existingNotification.endAt
+        ? dayjs(existingNotification.endAt)
+        : null;
+      const today = dayjs().startOf("day");
+
+      if (dto.startAt) {
+        const newStartAtDate = dayjs(dto.startAt);
+
+        // 新しい開始日が元の開始日と異なり、今日より前の場合はエラー
+        // 元の開始日が今日より前の場合は、その値を維持することを許可
+        if (
+          !startAtDate.isSame(newStartAtDate) &&
+          newStartAtDate.isBefore(today)
+        ) {
+          throw new BadRequestException(
+            "開始日は今日以降の日付を指定してください",
+          );
+        }
+
+        startAtDate = newStartAtDate;
+      }
+
+      if (dto.endAt) {
+        endAtDate = dayjs(dto.endAt);
+
+        // 終了日が今日より前の場合はエラー
+        if (endAtDate.isBefore(today)) {
+          throw new BadRequestException(
+            "終了日は今日以降の日付を指定してください",
+          );
+        }
+      } else if (dto.endAt === "") {
+        // 空文字列が来た場合はnullにする（終了日時の削除）
+        endAtDate = null;
+      }
+
+      // 開始日が終了日より後の場合はエラー
+      if (endAtDate && startAtDate.isAfter(endAtDate)) {
+        throw new BadRequestException(
+          "開始日は終了日より前の日付を指定してください",
+        );
+      }
+
+      await prisma.notification.update({
         where: { id },
         data: {
           title: dto.title,
           content: dto.content,
           level: dto.level,
-          startAt: dto.startAt ? startAtDate : undefined,
-          endAt: dto.endAt !== undefined ? endAtDate : undefined,
+          startAt: dto.startAt ? startAtDate.toDate() : undefined,
+          endAt:
+            dto.endAt !== undefined
+              ? endAtDate
+                ? endAtDate.toDate()
+                : null
+              : undefined,
           isVisibleOnTop: dto.isVisibleOnTop,
         },
       });
     } catch (error) {
-      console.error('Error in updateNotification:', error);
-      throw new BadRequestException('お知らせの更新に失敗しました');
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      if (error.code === "P2025") {
+        throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
+      }
+
+      this.logger.error(
+        `お知らせ更新エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException("お知らせの更新に失敗しました");
     }
   }
 
   /**
    * お知らせを削除
    */
-  async deleteNotification(id: number): Promise<void> {
-    // お知らせの存在確認
-    const existingNotification = await this.prisma.notification.findUnique({
-      where: { id },
-    });
-
-    if (!existingNotification) {
-      throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
-    }
-
+  async deleteNotification(id: number) {
     try {
-      await this.prisma.notification.delete({
+      // お知らせの存在確認と削除を一度に実行
+      await prisma.notification.delete({
         where: { id },
       });
     } catch (error) {
-      console.error('Error in deleteNotification:', error);
-      throw new BadRequestException('お知らせの削除に失敗しました');
+      if (error.code === "P2025") {
+        throw new NotFoundException(`お知らせ ID ${id} が見つかりません`);
+      }
+
+      this.logger.error(
+        `お知らせ削除エラー: ${error.message}`,
+        error.stack,
+        this.constructor.name,
+      );
+      throw new InternalServerErrorException("お知らせの削除に失敗しました");
     }
   }
-} 
+}

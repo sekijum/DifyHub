@@ -34,13 +34,6 @@ enum AppStatus {
   SUSPENDED
 }
 
-enum SubscriptionStatus {
-  ACTIVE     // 有効
-  CANCELED   // キャンセル済み
-  INCOMPLETE // 未完了 (支払い失敗など)
-  PAST_DUE   // 支払い期日超過
-}
-
 enum NotificationLevel {
   INFO    // 情報
   SUCCESS // 成功
@@ -92,8 +85,6 @@ model User {
   avatarUrl            String?
   bio                  String?            // 自己紹介カラムを追加 (任意)
   role                 Role               @default(USER)
-  planName             String             @default("free") // Plan.name へのFK
-  plan                 Plan               @relation(fields: [planName], references: [name])
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   status               UserStatus         @default(ACTIVE) // status フィールド削除
@@ -110,7 +101,6 @@ model User {
   payoutHistories      PayoutHistory[]       @relation("DeveloperPayouts")
 
   @@index([email])
-  @@index([planName]) // Reverted index back to planName
 }
 
 model DeveloperRequest {
@@ -229,15 +219,17 @@ model Bookmark {
 }
 
 model Plan {
-  name          String   @id // Reverted name to be the primary key
-  priceMonthly  Int
-  features      Json
-  status        PlanStatus @default(PRIVATE) // ステータスを追加
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  name            String   @id // Reverted name to be the primary key
+  amount          Int
+  features        Json
+  status          PlanStatus @default(PRIVATE)
+  squareCatalogId    String    // Square連携用プランID
+  billingPeriod   String    @default("MONTHLY") // 課金周期 (MONTHLY, ANNUAL等)
+  isFree          Boolean   @default(false)    // 無料プランかどうか
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  users         User[]
-  subscriptions Subscription[]
+  subscriptions   Subscription[]
 }
 
 model Subscription {
@@ -246,11 +238,12 @@ model Subscription {
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   planName             String             // Plan.name へのFK
   plan                 Plan               @relation(fields: [planName], references: [name])
-  status               SubscriptionStatus @default(INCOMPLETE)
+  squareCustomerId     String            // Square 顧客ID
+  squareSubscriptionId String?            // Square サブスクリプションID
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  @@index([planName]) // Reverted index back to planName
+  @@index([planName])
 }
 
 model Notification {

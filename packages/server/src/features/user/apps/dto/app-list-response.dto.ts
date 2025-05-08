@@ -1,4 +1,4 @@
-import { AppDto } from './app.dto';
+import { AppDto } from "./app.dto";
 
 export class AppListResponseDto {
   data: AppDto[];
@@ -8,4 +8,4 @@ export class AppListResponseDto {
     this.data = data;
     this.total = total;
   }
-} 
+}

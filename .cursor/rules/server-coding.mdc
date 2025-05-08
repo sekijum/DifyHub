@@ -1,0 +1,163 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## 1. 命名規則
+
+### ファイル命名
+- **コントローラーファイル**: `admin.[機能名].controller.ts`
+- **サービスファイル**: `admin.[機能名].service.ts`
+- **モジュールファイル**: `admin.[機能名].module.ts`
+- **DTOファイル**: 
+  - `find-[エンティティ]-list-query.dto.ts`
+  - `create-[エンティティ].dto.ts`
+  - `update-[エンティティ].dto.ts`
+  - `update-[エンティティ]-status.dto.ts`
+
+### コード命名
+- **クラス名**: パスカルケース（`AdminUsersService`）
+- **変数・関数名**: キャメルケース（`findUserList`）
+- **定数**: 大文字スネークケース（`DEFAULT_LIMIT`）
+- **APIエンドポイント**: ケバブケース（`admin/users`）
+
+### 関数命名パターン
+- **一覧取得**: `findXxxList`
+- **単一取得**: `findXxxById`
+- **作成**: `createXxx`
+- **更新**: `updateXxx`
+- **削除**: `deleteXxx`
+
+## 2. コード構造
+
+### インポート順序
+1. NestJS関連モジュール
+2. 外部ライブラリ
+3. 自作モジュール（@/から始まるもの）
+4. モデル・インターフェース
+5. DTOクラス
+
+### ファイル構造
+- **コントローラー**: エンドポイント定義とリクエスト処理のみ
+- **サービス**: ビジネスロジックの実装
+- **DTO**: データ転送オブジェクトの定義
+- **index.ts**: 各ディレクトリのエクスポート管理
+
+## 3. NestJS規約
+
+### デコレータ使用
+- **コントローラー宣言**: `@Controller('admin/xxx')`
+- **エンドポイント宣言**: `@Get()`, `@Post()`, `@Patch()`, `@Delete()`
+- **パラメータ取得**: `@Param()`, `@Query()`, `@Body()`
+- **認証・権限**: `@UseGuards()`, `@Roles()`
+
+### バリデーション
+- **ValidationPipe使用**: `@Body(ValidationPipe)`
+- **クラスバリデータ使用**: `class-validator`デコレータ
+
+## 4. データアクセス
+
+### Prisma使用
+- **共通インスタンス**: `prisma`クライアントを直接使用
+- **クエリ構築**: `Prisma.XxxWhereInput`型を使用
+- **トランザクション**: 必要に応じて`$transaction`使用
+
+### ページネーション
+- **標準関数使用**: `createPaginatedResponse`関数を使用
+- **パラメータ取得**: `getPaginationParams`関数を使用
+- **デフォルト値**: `page=1, limit=25`
+
+## 5. エラーハンドリング
+
+### 例外クラス
+- **存在しない場合**: `NotFoundException`
+- **権限エラー**: `ForbiddenException`
+- **重複エラー**: `ConflictException`
+- **バリデーションエラー**: `BadRequestException`
+- **システムエラー**: `InternalServerErrorException`
+
+### ロギング
+- **エラーログ**: `logger.error()`を使用
+- **警告ログ**: `logger.warn()`を使用
+- **情報ログ**: `logger.log()`を使用
+- **デバッグ**: 本番環境での`console.log`使用禁止
+
+## 6. 環境変数
+
+- **直接取得**: `process.env`から直接取得
+- **デフォルト値設定**: `process.env.XXX || 'デフォルト値'`
+
+## 7. DTOルール
+
+### 共通パターン
+- **検索クエリDTO**: ページネーションとフィルタパラメータを含む
+- **作成DTO**: 必須フィールドに`@IsNotEmpty()`使用
+- **更新DTO**: ほとんどのフィールドに`@IsOptional()`使用
+
+### 型変換
+- **数値変換**: `@Type(() => Number)`
+- **日付変換**: `@Type(() => Date)`
+
+## 8. レスポンス形式
+
+### 一覧取得
+```typescript
+{
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}
+```
+
+### 単一オブジェクト取得
+```typescript
+{
+  ...entityProperties
+}
+```
+
+## 9. セキュリティ
+
+### パスワード処理
+- **ハッシュ化**: `hashPassword`関数を使用
+- **比較**: `comparePassword`関数を使用
+
+### 認証・認可
+- **JWT認証**: `JwtAuthGuard`を使用
+- **ロールベース認可**: `RolesGuard`と`@Roles()`を使用
+
+## 10. コメント
+
+### 記述言語
+- 日本語でコメントを記述
+
+### API説明
+- 各エンドポイントメソッドの上に説明コメントを記述
+
+### 複雑なロジック
+- 複雑なビジネスロジックには目的と理由を説明するコメントを記述
+
+## 11. 拡張性
+
+### 共通化
+- 再利用可能なロジックは`utils`や`common`に切り出す
+- 複数の場所で使用される型定義は共通モジュールで定義
+
+### インターフェース設計
+- サービスはインターフェースを実装し、依存注入を容易にする
+
+## 12. テスト
+
+### テストファイル命名
+- **単体テスト**: `xxx.spec.ts`
+- **E2Eテスト**: `xxx.e2e-spec.ts`
+
+### テストカバレッジ
+- 重要なビジネスロジックは必ずテストカバレッジを確保
+
+## 13. ドキュメンテーション
+
+### API文書
+- **Swagger**: `@ApiTags()`, `@ApiOperation()`などを使用
+- **説明**: 各APIの目的と使用方法を記述 

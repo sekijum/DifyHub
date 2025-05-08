@@ -1,55 +1,54 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { Setting, Prisma } from '@prisma/client';
-import { UpdateSettingDto } from './dto/update-setting.dto';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { prisma } from "@/core/database/prisma.client";
+import { Setting, Prisma } from "@prisma/client";
+import { UpdateSettingDto } from "./dto/update-setting.dto";
 
 @Injectable()
 export class AdminSettingService {
   private readonly SETTING_ID = 1; // 設定は常に1レコードのみ存在し、IDは1
 
-  constructor(
-    private readonly prisma: PrismaService
-  ) {}
-
   /**
    * 設定を取得
    */
-  async findSetting(): Promise<Setting> {
-    const setting = await this.prisma.setting.findUnique({
+  async findSetting() {
+    const setting = await prisma.setting.findUnique({
       where: { id: this.SETTING_ID },
     });
 
     if (!setting) {
       // 設定が存在しない場合はデフォルト値で作成
-      return this.createDefaultSetting();
+      await this.createDefaultSetting();
     }
-
-    return setting;
   }
 
   /**
    * 設定を更新
    */
-  async updateSetting(updateDto: UpdateSettingDto): Promise<Setting> {
+  async updateSetting(dto: UpdateSettingDto) {
     // 更新データの準備
     const updateData: Prisma.SettingUpdateInput = {};
-    
-    if (updateDto.maintenanceMode !== undefined) updateData.maintenanceMode = updateDto.maintenanceMode;
-    if (updateDto.commissionRate !== undefined) updateData.commissionRate = updateDto.commissionRate;
-    if (updateDto.payoutFee !== undefined) updateData.payoutFee = updateDto.payoutFee;
-    
+
+    if (dto.maintenanceMode !== undefined)
+      updateData.maintenanceMode = dto.maintenanceMode;
+    if (dto.commissionRate !== undefined)
+      updateData.commissionRate = dto.commissionRate;
+    if (dto.payoutFee !== undefined) updateData.payoutFee = dto.payoutFee;
+
     try {
       // 更新を試みる
-      return await this.prisma.setting.update({
+      return await prisma.setting.update({
         where: { id: this.SETTING_ID },
         data: updateData,
       });
     } catch (error) {
       // レコードが存在しない場合はデフォルト設定を作成してから更新
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2025"
+      ) {
         await this.createDefaultSetting();
-        
-        return this.prisma.setting.update({
+
+        await prisma.setting.update({
           where: { id: this.SETTING_ID },
           data: updateData,
         });
@@ -63,8 +62,8 @@ export class AdminSettingService {
    * デフォルト設定を作成
    * @private
    */
-  private async createDefaultSetting(): Promise<Setting> {
-    return this.prisma.setting.create({
+  private async createDefaultSetting() {
+    await prisma.setting.create({
       data: {
         id: this.SETTING_ID,
         maintenanceMode: false,
@@ -73,4 +72,4 @@ export class AdminSettingService {
       },
     });
   }
-} 
+}

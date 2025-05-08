@@ -1,10 +1,19 @@
-import { IsEmail, IsString, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty } from "class-validator";
 
+/**
+ * ユーザーサインインDTO
+ */
 export class SignInDto {
-  @IsEmail({}, { message: '有効なメールアドレスを入力してください。' })
+  /**
+   * メールアドレス
+   */
+  @IsEmail({}, { message: "有効なメールアドレスを入力してください。" })
   email: string;
 
+  /**
+   * パスワード
+   */
   @IsString()
-  @IsNotEmpty({ message: 'パスワードを入力してください。' })
+  @IsNotEmpty({ message: "パスワードを入力してください。" })
   password: string;
-} 
+}

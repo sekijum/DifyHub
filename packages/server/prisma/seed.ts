@@ -1,6 +1,5 @@
-import { PrismaClient, Role, AppStatus, SubscriptionStatus, RatingType, MonthlyRevenueStatus, PayoutStatus, NotificationLevel, UserStatus, DeveloperRequestStatus, Prisma } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
+import { PrismaClient, Role, AppStatus, RatingType, MonthlyRevenueStatus, PayoutStatus, NotificationLevel, UserStatus, DeveloperRequestStatus, PlanStatus, Prisma } from '@prisma/client';
+import * as bcryptjs from 'bcryptjs';
 import * as dotenv from 'dotenv';
 
 // .env ファイルを読み込む (実行環境によっては不要な場合もある)
@@ -15,8 +14,23 @@ const DEFAULT_BOOKMARK_FOLDER_NAME = '後で見る';
 
 // --- ヘルパー関数 ---
 
+// ランダムな16進数文字列を生成する関数
+const randomHex = (length: number): string => {
+  let result = '';
+  const characters = '0123456789abcdef';
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+};
+
+// 指定範囲のランダムな整数を生成する関数
+const randomInt = (min: number, max: number): number => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
 const hashPassword = (password: string): string => {
-  return bcrypt.hashSync(password, SALT_ROUNDS);
+  return bcryptjs.hashSync(password, SALT_ROUNDS);
 };
 
 const getPlaceholderImageUrl = (width: number, height: number, text?: string, bgColor: string = 'cccccc', textColor: string = 'ffffff'): string => {
@@ -60,14 +74,35 @@ async function seedSettings() {
 async function seedPlans() {
   console.log('💰 Plans を作成/更新中...');
   const plansData = [
-    { name: 'free', priceMonthly: 0, features: ["+APIアクセス", "+基本検索", "-高度な機能"] },
-    { name: 'pro', priceMonthly: 980, features: ["+APIアクセス", "+高度な検索", "+開発者機能", "+分析機能"] }
+    { 
+      name: 'free', 
+      amount: 0, 
+      features: ["+APIアクセス", "+基本検索", "-高度な機能"],
+      squareCatalogId: 'square_free_dummy',
+      status: PlanStatus.ACTIVE,
+      isFree: true
+    },
+    { 
+      name: 'pro', 
+      amount: 980, 
+      features: ["+APIアクセス", "+高度な検索", "+開発者機能", "+分析機能"],
+      squareCatalogId: 'square_pro_dummy',
+      status: PlanStatus.ACTIVE,
+      isFree: false
+    }
   ];
+
   const createdPlans = [];
   for (const planData of plansData) {
     const plan = await prisma.plan.upsert({
       where: { name: planData.name },
-      update: { priceMonthly: planData.priceMonthly, features: planData.features },
+      update: { 
+        amount: planData.amount, 
+        features: planData.features,
+        squareCatalogId: planData.squareCatalogId,
+        status: planData.status,
+        isFree: planData.isFree
+      },
       create: planData,
     });
     createdPlans.push(plan);
@@ -187,7 +222,6 @@ async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
       update: {
         name: userData.name,
         role: userData.role,
-        planName: userData.planName,
         status: userData.status,
         avatarUrl: getPlaceholderImageUrl(100, 100, userData.avatarText),
         bio: userData.bio,
@@ -199,7 +233,6 @@ async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
         name: userData.name,
         developerName: userData.developerName,
         role: userData.role,
-        planName: userData.planName,
         status: userData.status,
         avatarUrl: getPlaceholderImageUrl(100, 100, userData.avatarText),
         bio: userData.bio,
@@ -212,6 +245,7 @@ async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
         },
       },
     });
+
     createdUsers.push(user);
     
     // ユーザーが多いため、全てのログは出力せず、10人ごとに出力
@@ -945,22 +979,39 @@ async function seedBookmarks(users: Awaited<ReturnType<typeof seedUsers>>, apps:
 
 async function seedSubscriptions(users: Awaited<ReturnType<typeof seedUsers>>, plans: Awaited<ReturnType<typeof seedPlans>>) {
   console.log('💳 Subscriptions を作成中...');
-  const paidPlans = plans.filter(p => p.priceMonthly > 0).map(p => p.name);
-  const targetUsers = users.filter(u => paidPlans.includes(u.planName) && u.status === UserStatus.ACTIVE);
+  // ユーザーのemailパターンからプランを判定
+  const targetUsers = users.filter(u => {
+    const isPro = u.email.includes('pro') || u.email.includes('admin') || u.email.includes('dev');
+    return u.status === UserStatus.ACTIVE && isPro;
+  });
+  
   let count = 0;
+  
   for (const user of targetUsers) {
-    // 70% Active, 15% Canceled, 10% Incomplete, 5% PastDue
-    const rand = Math.random();
-    let status: SubscriptionStatus;
-    if (rand < 0.7) status = SubscriptionStatus.ACTIVE;
-    else if (rand < 0.85) status = SubscriptionStatus.CANCELED;
-    else if (rand < 0.95) status = SubscriptionStatus.INCOMPLETE;
-    else status = SubscriptionStatus.PAST_DUE;
+    // プロプランのユーザーのみサブスクリプションを作成
+    if (user.planName !== 'pro') continue;
+    
+    // Square顧客ID (ランダム生成)
+    const squareCustomerId = `cust_${randomHex(16)}`;
+    
+    // Squareサブスクリプション情報 (50%の確率でnullに)
+    const squareSubscriptionId = Math.random() > 0.5 ? 
+      `sub_${randomHex(16)}` : 
+      null;
 
     await prisma.subscription.upsert({
       where: { userId: user.id },
-      update: { status: status, planName: user.planName }, // 更新時はプラン名も同期
-      create: { userId: user.id, planName: user.planName, status: status }
+      update: { 
+        planName: user.planName,
+        squareCustomerId,
+        squareSubscriptionId
+      },
+      create: { 
+        userId: user.id, 
+        planName: user.planName,
+        squareCustomerId,
+        squareSubscriptionId
+      }
     });
     count++;
   }
@@ -1066,7 +1117,7 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
         const bankName = getRandomElement(bankNames);
         const branchName = getRandomElement(branchNames);
         const branchCode = String(Math.floor(Math.random() * 999)).padStart(3, '0');
-        const accountNumber = String(crypto.randomInt(1000000, 9999999));
+        const accountNumber = String(randomInt(1000000, 9999999));
         const accountType = Math.random() < 0.7 ? '普通' : '当座';
         
         // 口座名義（漢字とカナ）
@@ -1145,7 +1196,7 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
     
     for (const dev of developers) {
         // 開発者ごとの基本収益額（固定値）
-        const baseAmount = crypto.randomInt(10000, 40000);  // 1万〜4万
+        const baseAmount = randomInt(10000, 40000);  // 1万〜4万
             
         // 過去24ヶ月分のデータを生成
         const MONTHS = 24;
@@ -1214,17 +1265,17 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
         let payoutCount: number;
         switch (payoutPattern) {
             case 1: // 頻繁に小額
-                payoutCount = crypto.randomInt(10, 20);
+                payoutCount = randomInt(10, 20);
                 break;
             case 2: // たまに大額
-                payoutCount = crypto.randomInt(3, 8);
+                payoutCount = randomInt(3, 8);
                 break;
             case 3: // 定期的に一定額
-                payoutCount = crypto.randomInt(6, 12);
+                payoutCount = randomInt(6, 12);
                 break;
             case 4: // 不定期混合
             default:
-                payoutCount = crypto.randomInt(5, 15);
+                payoutCount = randomInt(5, 15);
                 break;
         }
         
@@ -1245,17 +1296,17 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
             let requestedAmount: number;
             switch (payoutPattern) {
                 case 1: // 頻繁に小額
-                    requestedAmount = crypto.randomInt(5000, 15000);
+                    requestedAmount = randomInt(5000, 15000);
                     break;
                 case 2: // たまに大額
-                    requestedAmount = crypto.randomInt(30000, 60000);
+                    requestedAmount = randomInt(30000, 60000);
                     break;
                 case 3: // 定期的に一定額
-                    requestedAmount = crypto.randomInt(10000, 20000) * 5; // 1万〜2万の5倍（きりのいい数字）
+                    requestedAmount = randomInt(10000, 20000) * 5; // 1万〜2万の5倍（きりのいい数字）
                     break;
                 case 4: // 不定期混合
                 default:
-                    requestedAmount = crypto.randomInt(5000, 50000);
+                    requestedAmount = randomInt(5000, 50000);
                     break;
             }
             
@@ -1267,7 +1318,7 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
             // 0-4ヶ月前: 90% COMPLETED, 5% PROCESSING, 2% FAILED, 3% CANCELED
             // 5-12ヶ月前: 95% COMPLETED, 2% FAILED, 3% CANCELED
             // 13ヶ月以上前: 98% COMPLETED, 1% FAILED, 1% CANCELED
-            const randomDaysAgo = i * 30 + crypto.randomInt(0, 20); // 申請日を分散させる
+            const randomDaysAgo = i * 30 + randomInt(0, 20); // 申請日を分散させる
             const monthsAgo = Math.floor(randomDaysAgo / 30);
             
             let status: PayoutStatus;
@@ -1326,7 +1377,7 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
             
             // トランザクションID（完了した場合のみ）
             const transactionId = status === PayoutStatus.COMPLETED ? 
-                `tr_${crypto.randomBytes(8).toString('hex')}` : null;
+                `tr_${randomHex(16)}` : null;
             
             // 備考欄
             let notes: string | null = null;

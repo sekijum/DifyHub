@@ -1,22 +1,19 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { NotificationDto } from './dto/notification.dto';
-import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
-import { Prisma } from '@prisma/client';
-
-// レスポンスの型を定義 (コントローラでも使うのでエクスポートしても良い)
-interface NotificationListResponse {
-    data: NotificationDto[];
-    total: number;
-}
+import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { prisma } from "@/core/database/prisma.client";
+import { Prisma } from "@prisma/client";
+import { FindNotificationListQueryDto } from "./dto";
+import { logger } from "@/core/utils";
+import {
+  createPaginatedResponse,
+  getPaginationParams,
+} from "@/core/utils/pagination.util";
+import { dayjs } from "@/core/utils";
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
-
   // 有効期間フィルタリングのための共通条件
   private get baseWhereCondition(): Prisma.NotificationWhereInput {
-    const now = new Date();
+    const now = dayjs().toDate();
     return {
       startAt: { lte: now }, // 開始日時が現在時刻以前
       OR: [
@@ -29,53 +26,58 @@ export class NotificationsService {
   /**
    * 有効なお知らせをページネーションで取得
    */
-  async findAll(query: GetNotificationsQueryDto): Promise<NotificationListResponse> {
-    const { page, limit } = query;
-    const skip = (page - 1) * limit;
-    const take = limit;
+  async findNotificationList(query?: FindNotificationListQueryDto) {
+    try {
+      const { skip, take, page, limit } = getPaginationParams(query);
+      const where = this.baseWhereCondition;
 
-    const where = this.baseWhereCondition;
+      const orderBy: Prisma.NotificationOrderByWithRelationInput = {
+        startAt: "desc", // 新しい順
+      };
 
-    const orderBy: Prisma.NotificationOrderByWithRelationInput = {
-      startAt: 'desc', // 新しい順
-    };
+      // お知らせリストと総件数を並行取得
+      const [data, total] = await prisma.$transaction([
+        prisma.notification.findMany({
+          where,
+          orderBy,
+          skip,
+          take,
+        }),
+        prisma.notification.count({ where }), // 総件数も同じ条件でカウント
+      ]);
 
-    // お知らせリストと総件数を並行取得
-    const [notifications, total] = await this.prisma.$transaction([
-      this.prisma.notification.findMany({
-        where,
-        orderBy,
-        skip,
-        take,
-      }),
-      this.prisma.notification.count({ where }), // 総件数も同じ条件でカウント
-    ]);
-
-    // DTOに変換
-    const notificationDtos = notifications.map(NotificationDto.fromEntity);
-    return { data: notificationDtos, total };
+      return createPaginatedResponse(data, total, page, limit);
+    } catch (error) {
+      logger.error(`お知らせ一覧取得エラー: ${JSON.stringify(error)}`);
+      throw new InternalServerErrorException(
+        "お知らせ一覧の取得に失敗しました",
+      );
+    }
   }
 
   /**
    * トップページ表示用の有効なお知らせを取得
    */
-  async findForTopPage(): Promise<NotificationDto[]> {
-    const where: Prisma.NotificationWhereInput = {
-      ...this.baseWhereCondition, // 有効期間の条件
-      isVisibleOnTop: true,       // トップページ表示フラグ
-    };
+  async findTopNotificationList() {
+    try {
+      const where: Prisma.NotificationWhereInput = {
+        ...this.baseWhereCondition, // 有効期間の条件
+        isVisibleOnTop: true, // トップページ表示フラグ
+      };
 
-    const orderBy: Prisma.NotificationOrderByWithRelationInput = {
-      createdAt: 'desc', // 新しい順
-    };
+      const orderBy: Prisma.NotificationOrderByWithRelationInput = {
+        startAt: "desc", // 新しい順
+      };
 
-    const notifications = await this.prisma.notification.findMany({
-      where,
-      orderBy,
-      // take: 5, // 必要に応じて表示件数を制限
-    });
-
-    // DTOに変換
-    return notifications.map(NotificationDto.fromEntity);
+      return await prisma.notification.findMany({
+        where,
+        orderBy,
+      });
+    } catch (error) {
+      logger.error(`トップページお知らせ取得エラー: ${JSON.stringify(error)}`);
+      throw new InternalServerErrorException(
+        "トップページお知らせの取得に失敗しました",
+      );
+    }
   }
-} 
+}

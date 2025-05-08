@@ -7,20 +7,17 @@ import {
   Body,
   Param,
   ParseIntPipe,
-  ValidationPipe,
-} from '@nestjs/common';
-import { AdminAppsService } from './admin.apps.service';
-import { JwtAuthGuard } from '@/core/auth/guards/jwt-auth.guard';
-import { RolesGuard } from '@/core/auth/guards/roles.guard';
-import { Roles } from '@/core/auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
-import { GetAppsQueryDto } from './dto/get-apps-query.dto';
-import { UpdateAppStatusDto } from './dto/update-app-status.dto';
-import { AppWithCreator, PaginatedAppsResult } from './admin.apps.service';
+} from "@nestjs/common";
+import { Role } from "@prisma/client";
+import { JwtAuthGuard } from "@/core/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@/core/auth/guards/roles.guard";
+import { Roles } from "@/core/auth/decorators/roles.decorator";
+import { AdminAppsService } from "./admin.apps.service";
+import { FindAppListQueryDto, UpdateAppStatusDto } from "./dto";
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMINISTRATOR)
-@Controller('admin/apps')
+@Controller("admin/apps")
 export class AdminAppsController {
   constructor(private readonly adminAppsService: AdminAppsService) {}
 
@@ -28,31 +25,26 @@ export class AdminAppsController {
    * アプリ一覧を取得
    */
   @Get()
-  async getApps(
-    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
-    query: GetAppsQueryDto,
-  ): Promise<PaginatedAppsResult> {
-    return this.adminAppsService.findApps(query);
+  findAppList(@Query() query: FindAppListQueryDto) {
+    return this.adminAppsService.findAppList(query);
   }
 
   /**
    * アプリ詳細を取得
    */
-  @Get(':id')
-  async getAppById(
-    @Param('id', ParseIntPipe) id: number,
-  ): Promise<AppWithCreator> {
+  @Get(":id")
+  findAppById(@Param("id", ParseIntPipe) id: number) {
     return this.adminAppsService.findAppById(id);
   }
 
   /**
    * アプリのステータスを更新
    */
-  @Patch(':id/status')
-  async updateAppStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Body(ValidationPipe) updateDto: UpdateAppStatusDto,
-  ): Promise<AppWithCreator> {
+  @Patch(":id/status")
+  updateStatus(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() updateDto: UpdateAppStatusDto,
+  ) {
     return this.adminAppsService.updateAppStatus(id, updateDto);
   }
-} 
+}

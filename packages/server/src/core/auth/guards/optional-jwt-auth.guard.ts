@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Injectable } from "@nestjs/common";
+import { AuthGuard } from "@nestjs/passport";
 
 @Injectable()
-export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
+export class OptionalJwtAuthGuard extends AuthGuard("jwt") {
   // handleRequestをオーバーライドして、認証エラー時に例外をスローしないようにする
   handleRequest(err, user, info, context, status) {
     // err: Passport が strategy 検証中にエラーを検出した場合 (例: JWTの形式不正)
@@ -19,4 +19,4 @@ export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
     // 例外をスローせずに後続の処理に進む
     return user;
   }
-} 
+}

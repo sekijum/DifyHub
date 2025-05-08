@@ -1,11 +1,5 @@
-import { 
-  IsBoolean, 
-  IsNumber, 
-  IsOptional,
-  Min,
-  Max
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsBoolean, IsNumber, IsOptional, Min, Max } from "class-validator";
+import { Type } from "class-transformer";
 
 /**
  * 設定更新DTO
@@ -37,4 +31,4 @@ export class UpdateSettingDto {
   @Min(0)
   @Type(() => Number)
   payoutFee?: number;
-} 
+}

@@ -1,13 +1,18 @@
-import { Controller, Get } from '@nestjs/common';
-import { CategoriesService } from './categories.service';
-import { CategoryDto } from './dto/category.dto';
+import { Controller, Get } from "@nestjs/common";
+import { CategoriesService } from "./categories.service";
 
-@Controller('categories')
+/**
+ * カテゴリ関連のエンドポイントを提供するコントローラー
+ */
+@Controller("categories")
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  /**
+   * カテゴリ一覧を取得
+   */
   @Get()
-  findAll(): Promise<CategoryDto[]> {
-    return this.categoriesService.findAll();
+  findCategoryList() {
+    return this.categoriesService.findCategoryList();
   }
-} 
+}

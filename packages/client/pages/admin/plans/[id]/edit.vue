@@ -18,10 +18,10 @@
                 ></v-text-field>
               </v-col>
 
-              <!-- Price -->
+              <!-- amount -->
               <v-col cols="12">
                  <v-text-field
-                  v-model.number="editablePlan.price"
+                  v-model.number="editablePlan.amount"
                   label="月額料金 (円) *"
                   required
                   type="number"
@@ -160,7 +160,7 @@ interface PlanFeature {
 // Interface for plan data
 interface Plan {
   name: string;
-  priceMonthly: number;
+  amountMonthly: number;
   features: any; // JSONフィールド
   status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
   createdAt: string;
@@ -170,7 +170,7 @@ interface Plan {
 // Interface for the plan update payload
 interface UpdatePlanPayload {
   name?: string;
-  price?: number;
+  amount?: number;
   status?: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
   features?: string[];
 }
@@ -192,11 +192,11 @@ const error = ref<string | null>(null);
 // 編集可能なプラン情報
 const editablePlan = reactive<{
   name: string;
-  price: number;
+  amount: number;
   status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
 }>({
   name: '',
-  price: 0,
+  amount: 0,
   status: 'ACTIVE'
 });
 
@@ -220,7 +220,7 @@ const fetchPlanData = async () => {
     
     // 基本情報設定
     editablePlan.name = plan.name;
-    editablePlan.price = plan.priceMonthly;
+    editablePlan.amount = plan.amountMonthly;
     editablePlan.status = plan.status || 'ACTIVE';
     
     // 追加機能リスト設定
@@ -314,7 +314,7 @@ const savePlan = async () => {
     updateData.name = editablePlan.name;
   }
 
-  updateData.price = editablePlan.price;
+  updateData.amount = editablePlan.amount;
   updateData.status = editablePlan.status;
   
   // 機能リストは文字列配列としてサーバーに送信

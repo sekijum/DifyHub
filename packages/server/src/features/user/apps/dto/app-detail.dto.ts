@@ -1,12 +1,12 @@
-import { App, User, Category, Tag, AppSubImage } from '@prisma/client';
-import { AppDto } from './app.dto';
+import { App, User, Category, Tag, AppSubImage } from "@prisma/client";
+import { AppDto } from "./app.dto";
 
 // User, Category, Tag, AppSubImage の一部を含む App の型を定義
 type AppDetailEntity = App & {
   category?: Category | null;
   tags?: Tag[];
   subImages?: AppSubImage[];
-  creator?: Pick<User, 'id' | 'name' | 'avatarUrl'> | null;
+  creator?: Pick<User, "id" | "name" | "avatarUrl"> | null;
 };
 
 // 仮の関連DTO（必要であれば個別のファイルに定義）
@@ -28,8 +28,8 @@ interface SubImageDto {
 
 export class AppDetailDto extends AppDto {
   category?: CategoryDto | null; // カテゴリー情報
-  tags: TagDto[];              // タグ情報
-  subImages: SubImageDto[];     // サブ画像情報
+  tags: TagDto[]; // タグ情報
+  subImages: SubImageDto[]; // サブ画像情報
   creatorName?: string; // AppDtoから継承されるが、明示的に記述してもOK
   creatorAvatarUrl?: string | null; // AppDtoから継承されるが、明示的に記述してもOK
 
@@ -50,22 +50,30 @@ export class AppDetailDto extends AppDto {
   // Prisma の include で取得される型に合わせる
   constructor(entity: AppDetailEntity) {
     super(entity);
-    this.category = entity.category ? { id: entity.category.id, name: entity.category.name } : null;
-    this.tags = entity.tags?.map(t => ({ id: t.id, name: t.name })) ?? [];
-    this.subImages = entity.subImages?.map(si => ({ id: si.id, imageUrl: si.imageUrl })) ?? [];
+    this.category = entity.category
+      ? { id: entity.category.id, name: entity.category.name }
+      : null;
+    this.tags = entity.tags?.map((t) => ({ id: t.id, name: t.name })) ?? [];
+    this.subImages =
+      entity.subImages?.map((si) => ({ id: si.id, imageUrl: si.imageUrl })) ??
+      [];
     this.updatedAt = entity.updatedAt; // ★ constructor で updatedAt を設定
   }
 
   static fromEntity(entity: AppDetailEntity): AppDetailDto {
     const baseDto = AppDto.fromEntity(entity);
-    
+
     const dto = new AppDetailDto(entity);
     Object.assign(dto, baseDto);
 
-    dto.category = entity.category ? { id: entity.category.id, name: entity.category.name } : null;
-    dto.tags = entity.tags?.map(t => ({ id: t.id, name: t.name })) ?? [];
-    dto.subImages = entity.subImages?.map(si => ({ id: si.id, imageUrl: si.imageUrl })) ?? [];
-    
+    dto.category = entity.category
+      ? { id: entity.category.id, name: entity.category.name }
+      : null;
+    dto.tags = entity.tags?.map((t) => ({ id: t.id, name: t.name })) ?? [];
+    dto.subImages =
+      entity.subImages?.map((si) => ({ id: si.id, imageUrl: si.imageUrl })) ??
+      [];
+
     // ★ updatedAt を明示的にマッピング
     dto.updatedAt = entity.updatedAt;
 
@@ -75,4 +83,4 @@ export class AppDetailDto extends AppDto {
 
     return dto;
   }
-} 
+}

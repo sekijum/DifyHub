@@ -38,8 +38,8 @@
             items-per-page-text="表示行数"
             :items-per-page-options="itemsPerPageOptions"
           >
-            <template v-slot:item.priceMonthly="{ item }">
-              {{ item.priceMonthly.toLocaleString() }} 円/月
+            <template v-slot:item.amount="{ item }">
+              {{ item.amount.toLocaleString() }} 円/月
             </template>
             <template v-slot:item.features="{ item }">
               {{ getFeaturesSummary(item.features) }}
@@ -155,7 +155,7 @@ type ReadonlyHeaders = VDataTable['$props']['headers'];
 
 const headers: ReadonlyHeaders = [
   { title: 'プラン名', key: 'name', align: 'start' },
-  { title: '月額料金', key: 'priceMonthly', align: 'end' },
+  { title: '月額料金', key: 'amount', align: 'end' },
   { title: '機能', key: 'features', align: 'start' },
   { title: 'ステータス', key: 'status', align: 'center' },
   { title: 'アクション', key: 'actions', sortable: false, align: 'end', width: 100 },
@@ -164,7 +164,7 @@ const headers: ReadonlyHeaders = [
 // Interface for plan data
 interface Plan {
   name: string;
-  priceMonthly: number;
+  amount: number;
   features: any; // JSONフィールド
   status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
   createdAt: string;

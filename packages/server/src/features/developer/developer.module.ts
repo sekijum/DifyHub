@@ -1,15 +1,9 @@
-import { Module } from '@nestjs/common';
-import { DeveloperAppsModule } from './apps/developer.apps.module';
-import { DeveloperProfileModule } from './profile/developer.profile.module';
+import { Module } from "@nestjs/common";
+import { DeveloperAppsModule } from "./apps/developer.apps.module";
+import { DeveloperProfileModule } from "./profile/developer.profile.module";
 
 @Module({
-  imports: [
-    DeveloperAppsModule,
-    DeveloperProfileModule,
-  ],
-  exports: [
-    DeveloperAppsModule,
-    DeveloperProfileModule,
-  ],
+  imports: [DeveloperAppsModule, DeveloperProfileModule],
+  exports: [DeveloperAppsModule, DeveloperProfileModule],
 })
-export class DeveloperModule {} 
+export class DeveloperModule {}

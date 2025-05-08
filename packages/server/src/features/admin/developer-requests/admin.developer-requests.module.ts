@@ -1,12 +1,12 @@
-import { Module } from '@nestjs/common';
-import { AdminDeveloperRequestsController } from './admin.developer-requests.controller';
-import { AdminDeveloperRequestsService } from './admin.developer-requests.service';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { MailerService } from '@/core/mailer/mailer.service';
+import { Module } from "@nestjs/common";
+import { AdminDeveloperRequestsController } from "./admin.developer-requests.controller";
+import { AdminDeveloperRequestsService } from "./admin.developer-requests.service";
+import { MailerConfigModule } from "@/core/mailer/mailer.module";
 
 @Module({
+  imports: [MailerConfigModule],
   controllers: [AdminDeveloperRequestsController],
-  providers: [AdminDeveloperRequestsService, PrismaService, MailerService],
+  providers: [AdminDeveloperRequestsService],
   exports: [AdminDeveloperRequestsService],
 })
-export class AdminDeveloperRequestsModule {} 
+export class AdminDeveloperRequestsModule {}

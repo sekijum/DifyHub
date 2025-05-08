@@ -291,8 +291,8 @@ import { useNuxtApp } from '#app';
 import PageTitle from '~/components/PageTitle.vue';
 import draggable from 'vuedraggable';
 import { useToast } from '@/composables/useToast';
-import type { Category } from '~/types/app';
-import { AppStatus } from '~/types/app';
+import type { Category } from '~/types';
+import { AppStatus } from '~/types';
 
 definePageMeta({
   layout: 'developer',

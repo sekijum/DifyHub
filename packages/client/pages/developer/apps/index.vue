@@ -141,8 +141,8 @@
   import type { VDataTable } from 'vuetify/components';
   import PageTitle from '~/components/PageTitle.vue';
   import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
-  import { AppStatus } from '~/types/app';
-  import type { App, PaginatedAppsResult } from '~/types/app';
+  import { AppStatus } from '~/types';
+  import type { App, PaginatedAppsResult } from '~/types';
   import { formatDate } from '~/plugins/dayjs';
   
   definePageMeta({

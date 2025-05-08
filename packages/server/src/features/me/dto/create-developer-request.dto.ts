@@ -1,4 +1,10 @@
-import { IsOptional, IsString, IsUrl, MaxLength, IsNotEmpty } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  IsNotEmpty,
+} from "class-validator";
 
 export class CreateDeveloperRequestDto {
   /**
@@ -7,7 +13,10 @@ export class CreateDeveloperRequestDto {
    */
   @IsOptional()
   @IsString()
-  @IsUrl({ require_protocol: true }, { message: '有効なURLを入力してください (例: https://...)' })
+  @IsUrl(
+    { require_protocol: true },
+    { message: "有効なURLを入力してください (例: https://...)" },
+  )
   @MaxLength(2048) // URLの最大長を考慮
   portfolioUrl?: string;
 
@@ -19,4 +28,4 @@ export class CreateDeveloperRequestDto {
   @IsNotEmpty()
   @MaxLength(1000) // 例: 最大1000文字
   reason: string;
-} 
+}

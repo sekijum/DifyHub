@@ -1,32 +1,42 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@/core/database/prisma/prisma.service';
-import { AppStatus } from '@prisma/client';
-import { CategoryDto } from './dto/category.dto';
+import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { prisma } from "@/core/database/prisma.client";
+import { AppStatus } from "@prisma/client";
+import { logger } from "@/core/utils";
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
-
   /**
-   * すべてのカテゴリを名前順で取得します。
-   * オプションで公開アプリ数をカウントします。
+   * すべてのカテゴリを取得します。
+   * アプリ数の多い順にソートされます。
    */
-  async findAll(): Promise<CategoryDto[]> {
-    const categories = await this.prisma.category.findMany({
-      include: {
-        _count: {
-          select: { 
-            apps: { where: { status: AppStatus.PUBLISHED } } 
+  async findCategoryList() {
+    try {
+      const categories = await prisma.category.findMany({
+        include: {
+          _count: {
+            select: {
+              apps: { where: { status: AppStatus.PUBLISHED } },
+            },
           },
         },
-      },
-      orderBy: {
-        apps: {
-          _count: 'desc',
+        orderBy: {
+          apps: {
+            _count: "desc",
+          },
         },
-      },
-    });
+      });
 
-    return categories.map(CategoryDto.fromEntity);
+      // DTOを使わず、直接必要なデータ形式に変換
+      return categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        appCount: category._count?.apps || 0,
+      }));
+    } catch (error) {
+      logger.error(`カテゴリ一覧取得エラー: ${JSON.stringify(error)}`);
+      throw new InternalServerErrorException(
+        "カテゴリ一覧の取得に失敗しました",
+      );
+    }
   }
-} 
+}

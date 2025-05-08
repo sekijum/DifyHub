@@ -3,39 +3,137 @@ description:
 globs: 
 alwaysApply: true
 ---
-#### 1. UI/UXに関するルール
-- **常にシンプルで洗練されたUIを実装**する  
-  - 無駄な装飾、要素、動きは避ける  
-  - 一貫性のあるマージン・パディング・カラー・フォントサイズを使用  
-  - 操作の導線は明確に、迷わせないデザインとする
+## 1. UI/UX に関するルール
 
-#### 2. コメントに関するルール
-- **有益なコメントのみ残す（日本語）**
-  - ビジネスロジックの意図や特殊な処理の理由がある箇所のみコメント
-  - コメント例: `// 料金が0円の場合は無料表示に変換`
-- 以下は禁止：
+- **常にシンプルで洗練された UI を実装する**
+  - 無駄な装飾・要素・動きを避ける
+  - 一貫性のあるマージン・パディング・カラー・フォントサイズを使用
+  - 操作の導線は明確にし、迷わせないデザインを心がける
+
+---
+
+## 2. コメントに関するルール
+
+- **有益なコメントのみ（日本語）**
+  - ビジネスロジックの意図や特殊な処理の理由がある箇所にのみ記述
+  - ✅ 例: `// 料金が0円の場合は無料表示に変換`
+
+- ❌ 禁止事項：
+  - 処理内容を逐一説明する低レベルなコメント
   - 意味のないコメント（例：`// これは変数です`）
-  - 処理内容を逐一説明するような低レベルのコメント
-  - 一時的なデバッグ用のコメント（`console.log`含む）
+  - 一時的なデバッグコメント（`console.log` など）
 
-#### 3. 関数名・変数名に関するルール
+---
+
+## 3. 関数名・変数名に関するルール
+
 - **常に意味が明確で目的が伝わる命名にする**
-  - `handleSubmitForm`（×）→ `submitContactForm`（○）
-  - `data`（×）→ `userProfileData`（○）
-- **命名は一貫性を保つ（キャメルケース推奨）**
-- 不要な略語やアルファベットの羅列は禁止（例：`cfg`, `usrNm`）
+  - ❌ `handleSubmitForm` → ✅ `submitContactForm`
+  - ❌ `data` → ✅ `userProfileData`
+- **命名規則**
+  - camelCase を使用（`userProfile`、`fetchThreadList` など）
+  - 不要な略語・意味不明なアルファベットの羅列は使用しない（例：`cfg`, `usrNm`）
 
-#### 4. UIコードに関する具体的ルール（Vue/Nuxtなど想定）
-- `v-if` と `v-show` の使い分けは明確に（性能考慮）
-- 長いテンプレート内ロジックは必ずcomputedまたはmethodsに移す
-- コンポーネント単位は関心ごとで分割し、肥大化を避ける（SRP: 単一責任原則）
-- 入力フォームなどは`v-model`で双方向バインディングし、余計なロジックを避ける
+---
 
-#### 5. デバッグ・ログに関するルール
-- `console.log`, `debugger` のような**一時的な開発用コードはすべて削除**
-- デバッグが必要な場合は、開発環境判定を明示しログレベルを切り替える仕組みで管理（※ライブラリ使用も可）
+## 4. UI コード（Vue/Nuxt 3）に関するルール
 
-#### 6. その他（保守性・拡張性）
-- マジックナンバーや文字列の直書きは避け、定数または設定ファイルに分離
-- 共通処理は共通モジュール・ユーティリティに切り出す
-- 使われていない関数・変数は残さず即削除
+- `v-if` と `v-show` を適切に使い分け（性能を考慮）
+- 複雑なテンプレートロジックは `computed` や `methods` に切り出す
+- コンポーネントは単一責任の原則（SRP）に従って分割
+- 入力フォームは `v-model` を使用し、状態管理を簡潔に保つ
+
+---
+
+## 5. デバッグ・ログに関するルール
+
+- `console.log`, `console.warn`, `console.error`, `debugger`, `alert` などはすべて削除
+- 本番には一切出力しない。開発用ログは専用ロガー経由で行う（必要な場合のみ）
+
+---
+
+## 6. 保守性・拡張性のためのルール
+
+- マジックナンバーやハードコード文字列はすべて定数へ抽出
+- 再利用可能なロジックは `utils/`, `composables/`, `services/` に切り出す
+- 使われていない関数・変数はコードベースから削除する
+
+---
+
+## 7. サーバー（Prisma, API, ページネーション）ルール
+
+- **Prisma クエリのスタイルを統一**
+  - `select`, `include`, `where`, `orderBy` を明示的に記述
+  - ページネーションの共通ユーティリティ化（例：`paginate<T>()`）
+
+- **API レスポンス形式の統一**
+  ```ts
+  {
+    data: T;
+    meta?: { total: number; page: number; limit: number };
+    errors?: { message: string; code: string }[];
+  }
+  ```
+
+- **バリデーションは必ず型と共に定義（例：zodやclass-validator）**
+
+---
+
+## 8. ファイル構成・命名ルール
+
+- ディレクトリ・ファイル構成を用途別に整理：
+  - クライアント: `components/`, `composables/`, `types/`, `utils/`, `api/`
+  - サーバー: `controllers/`, `services/`, `entities/`, `dto/`, `types/`, `utils/`
+
+- **命名はケバブケース（ファイル）＋キャメルケース（変数・関数）**
+  - ✅ `user-form.vue`, `fetchThreadList.ts`
+
+---
+
+## 9. Nuxt 3 / NestJS ベストプラクティス準拠ルール
+
+- **Nuxt 3（client）**
+  - `use~` 命名で composables を定義
+  - `<script setup lang="ts">` を使用し、テンプレートと型整合性を保つ
+  - props / emits は明示的に型定義する
+
+- **NestJS（server）**
+  - `get~` ではなく `findAll~`, `findOne~`, `create~`, `update~`, `delete~` に統一
+    - ❌ `getApps()` → ✅ `findAllApps()`
+  - DTO/Service/Controller/Entity の役割を明確に分離
+  - 変数名・関数名は明確かつ自己説明的な英語を使用
+
+---
+
+## 10. 型定義と共通化ルール
+
+- **引数・戻り値・データ構造すべてに型定義を行う**
+  - `noImplicitAny` を徹底。必ず `type` または `interface` で明示
+  - ✅ `type User = { id: string; name: string }`
+
+- **型定義の共通化**
+  - クライアント: `types/` または `@/types/`
+  - サーバー: `src/common/types/`
+  - 例：`type PaginatedResponse<T> = { data: T[]; meta: { total: number; page: number; limit: number } }`
+
+- **Vue template 内でも型を正確に指定**
+  - ✅ `const title = ref<string>('')`
+  - ✅ `defineProps<{ userId: string }>()`
+  - ✅ `defineEmits<{ (e: 'submit', payload: User): void }>()`
+
+- **明示的な `any` の使用禁止**
+- ESLint の `@typescript-eslint/no-explicit-any` ルールを有効にし、明示的な `any` 型の使用を禁止する。
+  ```json
+  {
+    "rules": {
+      "@typescript-eslint/no-explicit-any": "error"
+    }
+  }
+  ```
+  このルールにより、明示的に `any` 型を指定することを防ぎ、コードの型安全性を維持します。
+
+- **代替案としての `unknown` 型の使用**
+- 型が不明な場合は `unknown` 型を使用し、適切な型チェックや型ガードを行うことで安全性を確保する。
+
+- **型定義の明示**
+- 関数の引数や戻り値、変数には明示的な型定義を行い、型推論に頼りすぎないようにする。

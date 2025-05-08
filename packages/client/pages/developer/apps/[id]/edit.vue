@@ -444,8 +444,8 @@ import PageTitle from '~/components/PageTitle.vue';
 import draggable from 'vuedraggable';
 import { useToast } from '@/composables/useToast';
 import axios from 'axios';
-import type { App, Category } from '~/types/app';
-import { AppStatus } from '~/types/app';
+import type { App, Category } from '~/types';
+import { AppStatus } from '~/types';
 
 definePageMeta({
   layout: 'developer',

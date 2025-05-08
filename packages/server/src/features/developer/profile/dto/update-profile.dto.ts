@@ -1,10 +1,10 @@
-import { 
-  IsString, 
-  IsOptional, 
+import {
+  IsString,
+  IsOptional,
   IsUrl,
   MaxLength,
-  MinLength
-} from 'class-validator';
+  MinLength,
+} from "class-validator";
 
 export class UpdateProfileDto {
   /**
@@ -12,8 +12,8 @@ export class UpdateProfileDto {
    */
   @IsOptional()
   @IsString()
-  @MinLength(2, { message: '開発者名は2文字以上入力してください' })
-  @MaxLength(50, { message: '開発者名は50文字以内で入力してください' })
+  @MinLength(2, { message: "開発者名は2文字以上入力してください" })
+  @MaxLength(50, { message: "開発者名は50文字以内で入力してください" })
   name?: string;
 
   /**
@@ -21,7 +21,7 @@ export class UpdateProfileDto {
    */
   @IsOptional()
   @IsString()
-  @MaxLength(100, { message: '開発者表示名は100文字以内で入力してください' })
+  @MaxLength(100, { message: "開発者表示名は100文字以内で入力してください" })
   developerName?: string;
 
   /**
@@ -29,7 +29,7 @@ export class UpdateProfileDto {
    */
   @IsOptional()
   @IsString()
-  @MaxLength(1000, { message: '自己紹介は1000文字以内で入力してください' })
+  @MaxLength(1000, { message: "自己紹介は1000文字以内で入力してください" })
   bio?: string;
 
   /**
@@ -44,4 +44,4 @@ export class UpdateProfileDto {
    */
   @IsOptional()
   removeAvatar?: boolean;
-} 
+}

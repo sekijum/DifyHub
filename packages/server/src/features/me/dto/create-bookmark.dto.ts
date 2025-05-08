@@ -1,4 +1,10 @@
-import { IsInt, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from "class-validator";
 
 export class CreateBookmarkDto {
   /**
@@ -14,7 +20,7 @@ export class CreateBookmarkDto {
    */
   @IsOptional()
   @IsInt()
-  @ValidateIf(o => o.folderName === undefined || o.folderName === null)
+  @ValidateIf((o) => o.folderName === undefined || o.folderName === null)
   folderId?: number;
 
   /**
@@ -25,6 +31,6 @@ export class CreateBookmarkDto {
   @IsOptional()
   @IsString()
   @MaxLength(50)
-  @ValidateIf(o => o.folderId === undefined || o.folderId === null)
+  @ValidateIf((o) => o.folderId === undefined || o.folderId === null)
   folderName?: string;
-} 
+}

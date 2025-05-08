@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
 
 export class UpdateAdministratorDto {
   @IsOptional()
@@ -11,6 +11,6 @@ export class UpdateAdministratorDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(8, { message: 'Password must be at least 8 characters long' })
-  password?: string; // パスワード変更は任意
-} 
+  @MinLength(8)
+  password?: string;
+}

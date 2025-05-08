@@ -9,7 +9,15 @@ class Storage {
   static getItem<T>(key: string): T | null {
     try {
       const value = localStorage.getItem(key);
-      return value ? (JSON.parse(value) as T) : null;
+      if (!value) return null;
+      
+      try {
+        // JSONとして解析を試みる
+        return JSON.parse(value) as T;
+      } catch (jsonError) {
+        // JSON解析に失敗した場合は、値をそのまま返す
+        return value as unknown as T;
+      }
     } catch (error) {
       console.error(`Error getting item ${key} from localStorage`, error);
       return null;

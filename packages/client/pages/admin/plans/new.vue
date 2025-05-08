@@ -18,10 +18,10 @@
                 ></v-text-field>
               </v-col>
 
-              <!-- Price -->
+              <!-- amount -->
               <v-col cols="12">
                  <v-text-field
-                  v-model.number="newPlan.price"
+                  v-model.number="newPlan.amount"
                   label="月額料金 (円) *"
                   required
                   type="number"
@@ -151,7 +151,7 @@ interface PlanFeature {
 // Interface for the plan creation payload
 interface CreatePlanPayload {
   name: string;
-  price: number;
+  amount: number;
   status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
   features?: string[];
 }
@@ -175,7 +175,7 @@ const featureInputs = ref<PlanFeature[]>([
 
 const newPlan = reactive<CreatePlanPayload>({
   name: '',
-  price: 0,
+  amount: 0,
   status: 'ACTIVE',
   features: []
 });
@@ -227,7 +227,7 @@ const createPlan = async () => {
   // APIに送信するデータを準備
   const payload = {
     name: newPlan.name,
-    price: newPlan.price,
+    amount: newPlan.amount,
     status: newPlan.status,
     // 機能リストは文字列配列としてサーバーに送信
     features: featureInputs.value

@@ -1,15 +1,11 @@
-import { Controller, Get, Query, ValidationPipe } from '@nestjs/common';
-import { NotificationsService } from './notifications.service';
-import { NotificationDto } from './dto/notification.dto';
-import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
+import { Controller, Get, Query } from "@nestjs/common";
+import { NotificationsService } from "./notifications.service";
+import { FindNotificationListQueryDto } from "./dto";
 
-// Serviceからインポートするか、ここで再度定義
-interface NotificationListResponse {
-    data: NotificationDto[];
-    total: number;
-}
-
-@Controller('notifications')
+/**
+ * お知らせ関連のエンドポイントを提供するコントローラー
+ */
+@Controller("notifications")
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
@@ -17,23 +13,15 @@ export class NotificationsController {
    * お知らせ一覧取得 (ページネーション対応)
    */
   @Get()
-  findAll(
-    // クエリパラメータのバリデーションと変換
-    @Query(new ValidationPipe({ 
-      transform: true, // クエリパラメータを DTO の型に変換
-      whitelist: true, // DTO に定義されていないプロパティを除去
-      // forbidNonWhitelisted: true, // 念のため無効化しておく
-    })) 
-    query: GetNotificationsQueryDto,
-  ): Promise<NotificationListResponse> {
-    return this.notificationsService.findAll(query);
+  findNotificationList(@Query() query: FindNotificationListQueryDto) {
+    return this.notificationsService.findNotificationList(query);
   }
 
   /**
    * トップページ表示用お知らせ取得
    */
-  @Get('top')
-  findForTopPage(): Promise<NotificationDto[]> {
-    return this.notificationsService.findForTopPage();
+  @Get("top")
+  findTopNotificationList() {
+    return this.notificationsService.findTopNotificationList();
   }
-} 
+}

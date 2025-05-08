@@ -1,17 +1,17 @@
-import { 
-  IsNotEmpty, 
-  IsString, 
-  IsOptional, 
-  IsUrl, 
-  IsArray, 
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsUrl,
+  IsArray,
   IsInt,
   IsBoolean,
   ArrayMaxSize,
   ValidateNested,
-  IsEnum
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { AppStatus } from '@prisma/client';
+  IsEnum,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { AppStatus } from "@prisma/client";
 
 export class AppSubImageDto {
   @IsString()
@@ -89,4 +89,4 @@ export class CreateAppDto {
   @ValidateNested({ each: true })
   @Type(() => AppSubImageDto)
   subImages?: AppSubImageDto[];
-} 
+}
