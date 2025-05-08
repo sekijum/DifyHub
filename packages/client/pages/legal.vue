@@ -52,7 +52,7 @@
             <div class="mb-6">
               <h2 class="text-h6 mb-2">代金の支払い時期</h2>
               <p class="text-body-2">クレジットカード：各カード会社の引き落とし日</p>
-              <p class="text-body-2">（月額課金の場合：初回申込時、以降毎月[課金日]）</p>
+              <p class="text-body-2">（月額課金：初回申込時、以降毎月初回と同日決済）</p>
             </div>
 
             <div class="mb-6">
@@ -63,7 +63,9 @@
             <div class="mb-6">
               <h2 class="text-h6 mb-2">返品・キャンセルについて</h2>
               <p class="text-body-2">サービスの特性上、原則として返品・返金・キャンセルはお受けできません。</p>
-              <p class="text-body-2">（クーリングオフ対象外である旨など、必要に応じて追記）</p>
+              <p class="text-body-2">当サービスはクーリングオフ制度の適用対象外です。</p>
+              <p class="text-body-2">定期課金の解約はいつでもマイページから行っていただけます。次回決済日までに解約をしていただければ、次回以降の請求は発生いたしません。</p>
+              <p class="text-body-2">なお、日割り分等での返金は承っておりませんのでご了承ください。</p>
             </div>
 
             <p class="text-caption text-right mt-6">
