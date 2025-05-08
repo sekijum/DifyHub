@@ -23,3 +23,6 @@ export interface SortParams {
 }
 
 export interface BaseParams extends PaginationParams, SearchParams, SortParams {}
+
+// app.tsの型を再エクスポート
+export * from './app';

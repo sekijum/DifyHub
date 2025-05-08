@@ -291,8 +291,7 @@ import { useNuxtApp } from '#app';
 import PageTitle from '~/components/PageTitle.vue';
 import draggable from 'vuedraggable';
 import { useToast } from '@/composables/useToast';
-import type { Category } from '~/types';
-import { AppStatus } from '~/types';
+import { AppStatus, type CategoryDto } from '~/types/app';
 
 definePageMeta({
   layout: 'developer',
@@ -318,7 +317,7 @@ interface AppPayload {
 }
 
 // --- カテゴリとタグのデータ ---
-const categories = ref<Category[]>([]);
+const categories = ref<CategoryDto[]>([]);
 const tags = ref<string[]>([]);
 const loadingCategories = ref(false);
 const loadingTags = ref(false);

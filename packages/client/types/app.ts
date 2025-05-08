@@ -1,7 +1,15 @@
 import type { PaginatedResult, BaseParams } from './common';
 
 // アプリステータス
-export type AppStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+export enum AppStatus {
+  DRAFT = 'DRAFT',
+  PENDING_REVIEW = 'PENDING_REVIEW',
+  APPROVED = 'APPROVED',
+  PUBLISHED = 'PUBLISHED',
+  PRIVATE = 'PRIVATE',
+  REJECTED = 'REJECTED',
+  SUSPENDED = 'SUSPENDED'
+}
 
 // アプリタグ
 export interface AppTag {
