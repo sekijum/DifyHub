@@ -17,8 +17,16 @@ export interface AppTag {
   name: string;
 }
 
+// アプリ評価情報
+export interface AppRatingInfo {
+  likeCount: number;
+  dislikeCount: number;
+  totalRatingCount: number;
+  positiveRatingRate: number;
+}
+
 // アプリ基本情報
-export interface AppDto {
+export interface AppDto extends AppRatingInfo {
   id: number;
   name: string;
   description: string | null;
@@ -28,20 +36,45 @@ export interface AppDto {
   categoryName: string;
   developerId: number;
   developerName: string;
+  developerAvatarUrl?: string | null;
   status: AppStatus;
   isSubscriptionLimited: boolean;
   createdAt: string;
   updatedAt: string;
   tags: AppTag[];
   usageCount: number;
-  likeCount: number;
-  dislikeCount: number;
   bookmarkCount: number;
+  likesCount: number;
+  dislikesCount: number;
 }
 
 // アプリ詳細情報
 export interface AppDetailDto extends AppDto {
   resultReason: string | null;
+  isBookmarked?: boolean;
+  isLiked?: boolean;
+  isDisliked?: boolean;
+}
+
+// アプリカードコンポーネント用の表示データ
+export interface AppCardData {
+  id: number;
+  name: string;
+  description: string;
+  imageUrl: string;
+  likes: number;
+  dislikes: number;
+  usageCount: number;
+  requiresSubscription: boolean;
+  creatorId: number | null;
+  creatorName?: string;
+  creatorAvatarUrl?: string | null;
+  category?: {
+    id: number;
+    name: string;
+  } | null;
+  positiveRatingRate: number | null;
+  totalRatingCount: number;
 }
 
 // アプリフィルターパラメータ

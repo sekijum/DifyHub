@@ -19,10 +19,10 @@
               </v-col>
 
               <!-- amount -->
-              <v-col cols="12">
+              <v-col cols="12" md="6">
                  <v-text-field
                   v-model.number="newPlan.amount"
-                  label="月額料金 (円) *"
+                  label="料金 (円) *"
                   required
                   type="number"
                   prefix="¥"
@@ -30,6 +30,20 @@
                   density="compact"
                   :rules="[rules.required, rules.nonNegative]"
                 ></v-text-field>
+              </v-col>
+              
+              <!-- interval -->
+              <v-col cols="12" md="6">
+                <v-select
+                  v-model="newPlan.billingPeriod"
+                  label="課金間隔 *"
+                  :items="intervalOptions"
+                  item-title="text"
+                  item-value="value"
+                  variant="outlined"
+                  density="compact"
+                  :rules="[rules.required]"
+                ></v-select>
               </v-col>
 
               <!-- Status -->
@@ -49,59 +63,8 @@
             
             <v-divider class="my-4"></v-divider>
             
-            <!-- Dynamic Features List -->
-            <h6 class="text-h6 mb-2">機能リスト</h6>
-            <v-row v-for="(feature, index) in featureInputs" :key="feature.id" align="center">
-              <v-col cols="12" sm="7" md="8">
-                <v-text-field
-                  v-model="feature.text"
-                  :label="`機能 ${index + 1}`"
-                  required
-                  variant="outlined"
-                  density="compact"
-                  hide-details="auto"
-                  :rules="[rules.required]"
-                ></v-text-field>
-              </v-col>
-              <v-col cols="8" sm="4" md="3">
-                <v-radio-group
-                  v-model="feature.type"
-                  inline
-                  density="compact"
-                  hide-details
-                >
-                  <v-radio label="含む" value="included" color="success"></v-radio>
-                  <v-radio label="除く" value="excluded" color="grey"></v-radio>
-                </v-radio-group>
-              </v-col>
-              <v-col cols="4" sm="1" class="text-center">
-                <v-btn
-                  icon
-                  variant="text"
-                  color="error"
-                  size="small"
-                  @click="removeFeature(feature.id)"
-                  :disabled="featureInputs.length <= 1"
-                  title="この機能を削除"
-                >
-                  <v-icon>mdi-delete-outline</v-icon>
-                </v-btn>
-              </v-col>
-            </v-row>
-            <v-row>
-               <v-col cols="12">
-                <v-btn
-                   variant="outlined"
-                   color="grey"
-                   @click="addFeature"
-                   size="small"
-                   prepend-icon="mdi-plus"
-                 >
-                   機能を追加
-                 </v-btn>
-               </v-col>
-            </v-row>
-            <!-- End Dynamic Features List -->
+            <!-- PlanFeaturesList Component -->
+            <PlanFeaturesList v-model="featureInputs" />
 
           </v-container>
           <small>*必須入力項目</small>
@@ -132,7 +95,10 @@
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { useNuxtApp } from 'nuxt/app';
+import type { PlanFeatureInput, CreatePlanDto } from '~/types/plan';
+import { PlanStatus, PlanInterval } from '~/types/plan';
 import PageTitle from '~/components/PageTitle.vue';
+import PlanFeaturesList from '~/components/PlanFeaturesList.vue';
 
 definePageMeta({
   layout: 'admin',
@@ -141,21 +107,6 @@ definePageMeta({
 const router = useRouter();
 const { $api } = useNuxtApp();
 
-// Interface for individual feature
-interface PlanFeature {
-  text: string;
-  type: 'included' | 'excluded';
-  id: number;
-}
-
-// Interface for the plan creation payload
-interface CreatePlanPayload {
-  name: string;
-  amount: number;
-  status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
-  features?: string[];
-}
-
 // --- Form and State ---
 const createForm = ref<any>(null);
 const isCreating = ref(false);
@@ -163,38 +114,37 @@ const snackbar = reactive({ show: false, text: '', color: 'success' });
 
 // Status options
 const statusOptions = [
-  { text: '有効', value: 'ACTIVE' },
-  { text: '非公開', value: 'PRIVATE' },
-  { text: '停止', value: 'SUSPENDED' }
+  { text: '有効', value: PlanStatus.ACTIVE },
+  { text: '停止', value: PlanStatus.SUSPENDED }
+];
+
+// 課金間隔オプション
+const intervalOptions = [
+  { text: '月額', value: PlanInterval.MONTH },
+  { text: '年額', value: PlanInterval.YEAR }
 ];
 
 // State for dynamic feature inputs
-const featureInputs = ref<PlanFeature[]>([
+const featureInputs = ref<PlanFeatureInput[]>([
   { id: Date.now(), text: '', type: 'included' } // Start with one empty feature
 ]);
 
-const newPlan = reactive<CreatePlanPayload>({
+const newPlan = reactive<{
+  name: string;
+  amount: number;
+  billingPeriod: PlanInterval;
+  status: PlanStatus;
+}>({
   name: '',
   amount: 0,
-  status: 'ACTIVE',
-  features: []
+  billingPeriod: PlanInterval.MONTH,
+  status: PlanStatus.ACTIVE
 });
 
 // --- Validation Rules ---
 const rules = {
   required: (value: any) => !!value || value === 0 || '必須項目です。',
   nonNegative: (value: number) => value >= 0 || '0以上の数値を入力してください。',
-};
-
-// --- Feature Management Actions ---
-const addFeature = () => {
-  featureInputs.value.push({ id: Date.now(), text: '', type: 'included' });
-};
-
-const removeFeature = (idToRemove: number) => {
-  if (featureInputs.value.length > 1) { // Prevent removing the last item
-    featureInputs.value = featureInputs.value.filter(f => f.id !== idToRemove);
-  }
 };
 
 // --- Main Actions ---
@@ -225,9 +175,10 @@ const createPlan = async () => {
   isCreating.value = true;
 
   // APIに送信するデータを準備
-  const payload = {
+  const payload: CreatePlanDto = {
     name: newPlan.name,
     amount: newPlan.amount,
+    billingPeriod: newPlan.billingPeriod,
     status: newPlan.status,
     // 機能リストは文字列配列としてサーバーに送信
     features: featureInputs.value
@@ -236,6 +187,7 @@ const createPlan = async () => {
   };
 
   try {
+    // APIを直接使用
     await $api.post('/admin/plans', payload);
     
     snackbar.text = 'プランを新規作成しました。';
@@ -253,7 +205,6 @@ const createPlan = async () => {
     isCreating.value = false;
   }
 };
-
 </script>
 
 <style scoped>

@@ -24,8 +24,10 @@
     <Header @toggle-drawer="toggleDrawer" />
 
     <!-- Main Content -->
-
     <v-main><NuxtPage /></v-main>
+
+    <!-- Global Modal -->
+    <GlobalModal />
 
     <!-- Footer or other layout elements -->
     <!-- <MenuModal /> -->
@@ -37,6 +39,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useDisplay } from 'vuetify'; // Import useDisplay
 import Header from '~/components/Header.vue';
 import SidebarNav from '~/components/SidebarNav.vue'; // Import SidebarNav
+import GlobalModal from '~/components/GlobalModal.vue';
 // Removed: import { useNuxtApp } from '#app'
 
 // Removed: const { $vuetify } = useNuxtApp()

@@ -29,8 +29,9 @@ const randomInt = (min: number, max: number): number => {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
-const hashPassword = (password: string): string => {
-  return bcryptjs.hashSync(password, SALT_ROUNDS);
+// パスワードハッシュ化処理を非同期に変更
+const hashPassword = async (password: string): Promise<string> => {
+  return bcryptjs.hash(password, SALT_ROUNDS);
 };
 
 const getPlaceholderImageUrl = (width: number, height: number, text?: string, bgColor: string = 'cccccc', textColor: string = 'ffffff'): string => {
@@ -72,24 +73,21 @@ async function seedSettings() {
 }
 
 async function seedPlans() {
-  console.log('💰 Plans を作成/更新中...');
+  console.log('📋 Plans (isDefaultのみ) を作成/更新中...');
+  
+  // プランデータ
   const plansData = [
-    { 
-      name: 'free', 
-      amount: 0, 
-      features: ["+APIアクセス", "+基本検索", "-高度な機能"],
-      squareCatalogId: 'square_free_dummy',
+    {
+      name: 'free',
+      features: {
+        monthlyAppLimit: 100,
+        fileUploadSizeLimit: 5, // MB
+        isHighPrioritySupport: false,
+        canDevelopApps: false
+      },
       status: PlanStatus.ACTIVE,
-      isFree: true
+      isDefault: true, // デフォルトプラン
     },
-    { 
-      name: 'pro', 
-      amount: 980, 
-      features: ["+APIアクセス", "+高度な検索", "+開発者機能", "+分析機能"],
-      squareCatalogId: 'square_pro_dummy',
-      status: PlanStatus.ACTIVE,
-      isFree: false
-    }
   ];
 
   const createdPlans = [];
@@ -97,23 +95,23 @@ async function seedPlans() {
     const plan = await prisma.plan.upsert({
       where: { name: planData.name },
       update: { 
-        amount: planData.amount, 
         features: planData.features,
-        squareCatalogId: planData.squareCatalogId,
         status: planData.status,
-        isFree: planData.isFree
+        isDefault: planData.isDefault,
       },
       create: planData,
     });
     createdPlans.push(plan);
   }
-  console.log('✅ Plans 作成/更新完了:', createdPlans.map(p => p.name).join(', '));
+  
+  console.log(`✅ Plans 作成/更新完了 (${createdPlans.length}件)`);
   return createdPlans;
 }
 
-async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
+async function seedUsers() {
   console.log('👤 Users を作成/更新中...');
-  const hashedPassword = hashPassword(DEFAULT_PASSWORD);
+  // パスワードハッシュ化を非同期に変更
+  const hashedPassword = await hashPassword(DEFAULT_PASSWORD);
   
   // 姓のリスト
   const lastNames = [
@@ -149,6 +147,10 @@ async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
 
   // 特定のユーザーデータ (必要な役割やステータスのユーザーを確保)
   const specificUsersData = [
+    { email: 'admin@difyhub.com', name: '田中 管理者', role: Role.ADMINISTRATOR, planName: 'free', avatarText: '管', status: UserStatus.ACTIVE, bio: 'DifyHubの管理者です。プラットフォームの改善に努めています。' },
+    { email: 'admin2@difyhub.com', name: '鈴木 管理人', role: Role.ADMINISTRATOR, planName: 'free', avatarText: '鈴', status: UserStatus.ACTIVE, bio: 'DifyHubの運営責任者です。ユーザー体験向上に取り組んでいます。' },
+    { email: 'sato.dev@difyhub.com', name: '佐藤 開発者', developerName: '佐藤Dev工房', role: Role.DEVELOPER, planName: 'free', avatarText: '佐', status: UserStatus.ACTIVE, bio: '画像生成系AIと業務効率化アプリを開発しています。よろしくお願いします！趣味は写真。' },
+    { email: 'suzuki.dev@difyhub.com', name: '鈴木 花子', developerName: 'スズキApps', role: Role.DEVELOPER, planName: 'free', avatarText: '鈴', status: UserStatus.ACTIVE, bio: '開発者向けの便利なツールを作成するのが好きです。TypeScriptとPythonが得意。' },
     { email: 'admin@difyhub.com', name: '田中 管理者', role: Role.ADMINISTRATOR, planName: 'pro', avatarText: '管', status: UserStatus.ACTIVE, bio: 'DifyHubの管理者です。プラットフォームの改善に努めています。' },
     { email: 'admin2@difyhub.com', name: '鈴木 管理人', role: Role.ADMINISTRATOR, planName: 'pro', avatarText: '鈴', status: UserStatus.ACTIVE, bio: 'DifyHubの運営責任者です。ユーザー体験向上に取り組んでいます。' },
     { email: 'sato.dev@difyhub.com', name: '佐藤 開発者', developerName: '佐藤Dev工房', role: Role.DEVELOPER, planName: 'pro', avatarText: '佐', status: UserStatus.ACTIVE, bio: '画像生成系AIと業務効率化アプリを開発しています。よろしくお願いします！趣味は写真。' },
@@ -172,9 +174,8 @@ async function seedUsers(plans: Awaited<ReturnType<typeof seedPlans>>) {
     else if (roleRand < 0.9) role = Role.DEVELOPER;
     else role = Role.ADMINISTRATOR;
     
-    // ランダムなプラン (70% free, 30% pro)
-    const planRand = Math.random();
-    let planName = planRand < 0.7 ? 'free' : 'pro';
+    // すべてのユーザーはfreeプランに紐づける
+    let planName = 'free';
     
     // ランダムなステータス (90% ACTIVE, 5% SUSPENDED, 5% PENDING_VERIFICATION)
     const statusRand = Math.random();
@@ -977,41 +978,32 @@ async function seedBookmarks(users: Awaited<ReturnType<typeof seedUsers>>, apps:
     console.log(`✅ Bookmarks 作成完了 (フォルダ数: ${folderCount}件, ブックマーク数: ${finalBookmarkCount}件 / 目標: ${targetBookmarkCount}件)`);
 }
 
-async function seedSubscriptions(users: Awaited<ReturnType<typeof seedUsers>>, plans: Awaited<ReturnType<typeof seedPlans>>) {
+async function seedSubscriptions(users: Awaited<ReturnType<typeof seedUsers>>) {
   console.log('💳 Subscriptions を作成中...');
-  // ユーザーのemailパターンからプランを判定
-  const targetUsers = users.filter(u => {
-    const isPro = u.email.includes('pro') || u.email.includes('admin') || u.email.includes('dev');
-    return u.status === UserStatus.ACTIVE && isPro;
-  });
-  
   let count = 0;
   
-  for (const user of targetUsers) {
+  for (const user of users) {
     // プロプランのユーザーのみサブスクリプションを作成
-    if (user.planName !== 'pro') continue;
     
-    // Square顧客ID (ランダム生成)
-    const squareCustomerId = `cust_${randomHex(16)}`;
-    
-    // Squareサブスクリプション情報 (50%の確率でnullに)
-    const squareSubscriptionId = Math.random() > 0.5 ? 
-      `sub_${randomHex(16)}` : 
-      null;
+    // PAY.JP顧客ID (ランダム生成)
+    const payjpCustomerId = `cust_${randomHex(16)}`;
+  
 
-    await prisma.subscription.upsert({
-      where: { userId: user.id },
-      update: { 
-        planName: user.planName,
-        squareCustomerId,
-        squareSubscriptionId
-      },
-      create: { 
+    // ユーザーのpayjpCustomerIdを更新
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { payjpCustomerId }
+    });
+
+        // upsertではなくcreateを使用
+    await prisma.subscription.create({
+      data: { 
         userId: user.id, 
-        planName: user.planName,
-        squareCustomerId,
-        squareSubscriptionId
+        planName: "free",
       }
+    }).catch(err => {
+      // エラーが発生した場合はログに出力するだけで続行
+      console.warn(`Subscription作成エラー (User: ${user.id}): ${err.message}`);
     });
     count++;
   }
@@ -1087,7 +1079,7 @@ async function seedNotifications() {
 }
 
 async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
-    console.log('📈 Developer関連データ (収益, 出金) を作成中...');
+    console.log('📈 Developer関連データ (収益) を作成中...');
     const developers = users.filter(u => u.role === Role.DEVELOPER);
     if (developers.length === 0) {
         console.warn('⚠️ 開発者ロールのユーザーが存在しないため、開発者データは作成されません。');
@@ -1096,68 +1088,29 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
     
     console.log(`  -> ${developers.length}人の開発者に対してデータを作成します...`);
     
-    // 銀行名リスト
-    const bankNames = [
-        'みずほ銀行', '三菱UFJ銀行', '三井住友銀行', 'りそな銀行', '埼玉りそな銀行',
-        '千葉銀行', '横浜銀行', '福岡銀行', '北海道銀行', '七十七銀行',
-        '地方銀行', '信用金庫', 'ゆうちょ銀行', 'PayPay銀行', 'イオン銀行',
-        '楽天銀行', 'SBI新生銀行', 'あおぞら銀行', '住信SBIネット銀行', 'GMOあおぞらネット銀行'
-    ];
+    // 開発者にPAY.JPテナントIDを設定
+    console.log(`  -> 開発者のPAY.JPテナントIDを設定中...`);
+    const tenantPromises = [];
     
-    // 支店名リスト
-    const branchNames = [
-        '本店', '渋谷支店', '新宿支店', '池袋支店', '横浜支店',
-        '大阪支店', '梅田支店', '名古屋支店', '福岡支店', '札幌支店',
-        '仙台支店', '広島支店', '京都支店', '神戸支店', '千葉支店',
-        '浦和支店', '町田支店', '立川支店', '川崎支店', '船橋支店'
-    ];
-    
-    const createPayoutAccount = async (dev: any) => {
-        // 銀行情報を生成
-        const bankName = getRandomElement(bankNames);
-        const branchName = getRandomElement(branchNames);
-        const branchCode = String(Math.floor(Math.random() * 999)).padStart(3, '0');
-        const accountNumber = String(randomInt(1000000, 9999999));
-        const accountType = Math.random() < 0.7 ? '普通' : '当座';
+    for (const dev of developers) {
+        // PAY.JPテナントID (ランダム生成)
+        const payjpTenantId = `tenant_${randomHex(16)}`;
         
-        // 口座名義（漢字とカナ）
-        const accountHolderKanji = dev.name;
-        const accountHolderKana = dev.name.replace(/[一-龠々]/g, 'ア'); // 簡易的に漢字をカナに変換
-        
-        await prisma.payoutAccount.upsert({
-            where: { developerId: dev.id },
-            update: { 
-                accountDetails: { 
-                    bankName, 
-                    branchName,
-                    branchCode, 
-                    accountNumber, 
-                    accountType,
-                    accountHolder: accountHolderKanji,
-                    accountHolderKana
-                } 
-            },
-            create: { 
-                developerId: dev.id, 
-                accountDetails: { 
-                    bankName, 
-                    branchName,
-                    branchCode, 
-                    accountNumber, 
-                    accountType,
-                    accountHolder: accountHolderKanji,
-                    accountHolderKana
-                } 
-            }
-        });
-    };
+        tenantPromises.push(
+            prisma.user.update({
+                where: { id: dev.id },
+                data: { payjpTenantId }
+            })
+        );
+    }
     
-    // 全開発者の出金口座データ作成（並行処理）
-    await Promise.all(developers.map(dev => createPayoutAccount(dev)));
-    console.log(`  -> ${developers.length}人の出金口座情報を作成しました`);
+    await Promise.all(tenantPromises);
+    console.log(`  -> ${developers.length}人の開発者にPAY.JPテナントIDを設定しました`);
     
     // MonthlyRevenue データ（より多様なパターンで）
-    console.log(`  -> 月次収益データを作成中...`);
+    console.log(`  -> 既存の月次収益データをクリア中...`);
+await prisma.monthlyRevenue.deleteMany({});
+console.log(`  -> 月次収益データを作成中...`);
     const monthlyRevenuePromises = [];
     const today = new Date();
     
@@ -1206,31 +1159,21 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
             const monthDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
             const amount = revenues[i];
             
-            // ステータスを決定（より現実的なパターン）
-            let status: MonthlyRevenueStatus;
-            if (i === 0) {
-                // 当月はすべてUNPAID
-                status = MonthlyRevenueStatus.UNPAID;
-            } else if (i === 1) {
-                // 先月は80%がUNPAID、20%がPROCESSING
-                status = Math.random() < 0.8 ? MonthlyRevenueStatus.UNPAID : MonthlyRevenueStatus.PROCESSING;
-            } else if (i === 2) {
-                // 2ヶ月前は30%がUNPAID、50%がPROCESSING、20%がPAID
-                const rand = Math.random();
-                if (rand < 0.3) status = MonthlyRevenueStatus.UNPAID;
-                else if (rand < 0.8) status = MonthlyRevenueStatus.PROCESSING;
-                else status = MonthlyRevenueStatus.PAID;
-            } else {
-                // それ以前は95%がPAID、5%がPROCESSINGかUNPAID
-                status = Math.random() < 0.95 ? MonthlyRevenueStatus.PAID : 
-                         (Math.random() < 0.5 ? MonthlyRevenueStatus.PROCESSING : MonthlyRevenueStatus.UNPAID);
-            }
+            // PAY.JP転送情報を設定（データ構造の検証ではtypeとして追加）
+            const isPastMonth = i > 0; // 当月以外
+            const isTransferred = isPastMonth && Math.random() < 0.8; // 過去の月は80%の確率で転送済み
             
             monthlyRevenuePromises.push(
                 prisma.monthlyRevenue.upsert({
                     where: { developerId_period: { developerId: dev.id, period: monthDate } },
-                    update: { amount: amount, status: status },
-                    create: { developerId: dev.id, period: monthDate, amount: amount, status: status }
+                    update: { 
+                        amount
+                    },
+                    create: { 
+                        developerId: dev.id, 
+                        period: monthDate, 
+                        amount
+                    }
                 })
             );
         }
@@ -1251,180 +1194,7 @@ async function seedDeveloperData(users: Awaited<ReturnType<typeof seedUsers>>) {
     const totalMonthlyRevenue = await prisma.monthlyRevenue.count();
     console.log(`  -> 月次収益データ作成完了 (${totalMonthlyRevenue}件)`);
     
-    // PayoutHistory（出金履歴）データ
-    console.log(`  -> 出金履歴データを作成中...`);
-    const payoutPromises = [];
-    let totalPayouts = 0;
-    
-    for (const dev of developers) {
-        // 開発者ごとの出金パターンを決定
-        // 1: 頻繁に小額出金、2: たまに大額出金、3: 定期的に一定額出金、4: 不定期混合
-        const payoutPattern = Math.floor(Math.random() * 4) + 1;
-        
-        // 出金回数を決定（パターンに応じて）
-        let payoutCount: number;
-        switch (payoutPattern) {
-            case 1: // 頻繁に小額
-                payoutCount = randomInt(10, 20);
-                break;
-            case 2: // たまに大額
-                payoutCount = randomInt(3, 8);
-                break;
-            case 3: // 定期的に一定額
-                payoutCount = randomInt(6, 12);
-                break;
-            case 4: // 不定期混合
-            default:
-                payoutCount = randomInt(5, 15);
-                break;
-        }
-        
-        // 支払済み総額を追跡（収益を超えないようにするため）
-        let totalPaid = 0;
-        // 月次収益の合計を取得
-        const totalRevenue = await prisma.monthlyRevenue.aggregate({
-            where: { 
-                developerId: dev.id,
-                status: MonthlyRevenueStatus.PAID
-            },
-            _sum: { amount: true }
-        });
-        const availableRevenue = (totalRevenue._sum.amount || 0) * 0.9; // 安全マージンとして90%まで
-        
-        for (let i = 0; i < payoutCount && totalPaid < availableRevenue; i++) {
-            // 出金額を決定（パターンに応じて）
-            let requestedAmount: number;
-            switch (payoutPattern) {
-                case 1: // 頻繁に小額
-                    requestedAmount = randomInt(5000, 15000);
-                    break;
-                case 2: // たまに大額
-                    requestedAmount = randomInt(30000, 60000);
-                    break;
-                case 3: // 定期的に一定額
-                    requestedAmount = randomInt(10000, 20000) * 5; // 1万〜2万の5倍（きりのいい数字）
-                    break;
-                case 4: // 不定期混合
-                default:
-                    requestedAmount = randomInt(5000, 50000);
-                    break;
-            }
-            
-            // 残りの出金可能額を超えないように調整
-            requestedAmount = Math.min(requestedAmount, availableRevenue - totalPaid);
-            if (requestedAmount < 5000) break; // 最低出金額を下回る場合は終了
-            
-            // ステータスを決定（古い方が完了率が高い）
-            // 0-4ヶ月前: 90% COMPLETED, 5% PROCESSING, 2% FAILED, 3% CANCELED
-            // 5-12ヶ月前: 95% COMPLETED, 2% FAILED, 3% CANCELED
-            // 13ヶ月以上前: 98% COMPLETED, 1% FAILED, 1% CANCELED
-            const randomDaysAgo = i * 30 + randomInt(0, 20); // 申請日を分散させる
-            const monthsAgo = Math.floor(randomDaysAgo / 30);
-            
-            let status: PayoutStatus;
-            const statusRand = Math.random();
-            
-            if (monthsAgo < 5) {
-                if (statusRand < 0.9) status = PayoutStatus.COMPLETED;
-                else if (statusRand < 0.95) status = PayoutStatus.PROCESSING;
-                else if (statusRand < 0.97) status = PayoutStatus.FAILED;
-                else status = PayoutStatus.CANCELED;
-            } else if (monthsAgo < 13) {
-                if (statusRand < 0.95) status = PayoutStatus.COMPLETED;
-                else if (statusRand < 0.97) status = PayoutStatus.FAILED;
-                else status = PayoutStatus.CANCELED;
-            } else {
-                if (statusRand < 0.98) status = PayoutStatus.COMPLETED;
-                else if (statusRand < 0.99) status = PayoutStatus.FAILED;
-                else status = PayoutStatus.CANCELED;
-            }
-            
-            // 完了した出金のみ総額に加算
-            if (status === PayoutStatus.COMPLETED) {
-                totalPaid += requestedAmount;
-            }
-            
-            // 手数料を計算
-            const fee = (status === PayoutStatus.COMPLETED || status === PayoutStatus.PROCESSING) ? 500 : 0;
-            
-            // 申請日と処理日を設定
-            const requestedAt = daysAgo(randomDaysAgo);
-            let processedAt: Date | null = null;
-            
-            // PayoutStatus.PENDINGが存在しないため、この比較を修正
-            if (status !== PayoutStatus.PROCESSING) {
-                // 0-5日後に処理
-                processedAt = new Date(requestedAt.getTime() + (Math.random() * 5 * 24 * 60 * 60 * 1000));
-            }
-            
-            // 出金理由のバリエーション
-            const reasonPool = [
-                '定期出金', '利益確定', '事業資金', '経費支払い', '設備投資',
-                '税金支払い', '開発費用', '広告費用', '運営費用', null
-            ];
-            
-            // 失敗理由のバリエーション
-            const failedReasonPool = [
-                '振込先口座情報エラー', '銀行システムエラー', '残高不足', '口座凍結',
-                '銀行側拒否', '情報不一致', '期限切れ', '承認待ち'
-            ];
-            
-            // キャンセル理由のバリエーション
-            const canceledReasonPool = [
-                '開発者キャンセル', '金額変更のため', '出金時期変更', '二重申請',
-                '確認のため', '計画変更', '別口座へ変更', '手続きミス'
-            ];
-            
-            // トランザクションID（完了した場合のみ）
-            const transactionId = status === PayoutStatus.COMPLETED ? 
-                `tr_${randomHex(16)}` : null;
-            
-            // 備考欄
-            let notes: string | null = null;
-            if (status === PayoutStatus.FAILED) {
-                notes = getRandomElement(failedReasonPool);
-            } else if (status === PayoutStatus.CANCELED) {
-                notes = getRandomElement(canceledReasonPool);
-            } else if (Math.random() < 0.3) { // 30%の確率でその他のステータスにも備考
-                notes = getRandomElement(reasonPool);
-            }
-            
-            payoutPromises.push(
-                prisma.payoutHistory.create({
-                    data: {
-                        developerId: dev.id,
-                        requestedAmount: requestedAmount,
-                        fee: fee,
-                        transferAmount: Math.max(0, requestedAmount - fee),
-                        status: status,
-                        requestedAt: requestedAt,
-                        processedAt: processedAt,
-                        transactionId: transactionId,
-                        notes: notes,
-                    }
-                }).then(() => {
-                    totalPayouts++;
-                    return true;
-                }).catch(err => {
-                    console.warn(`  -> PayoutHistory 作成失敗 (Developer: ${dev.id}):`, err.message);
-                    return false;
-                })
-            );
-            
-            // バッチ処理
-            if (payoutPromises.length >= 50) {
-                await Promise.all(payoutPromises);
-                payoutPromises.length = 0;
-            }
-        }
-    }
-    
-    // 残りの出金履歴データを保存
-    if (payoutPromises.length > 0) {
-        await Promise.all(payoutPromises);
-    }
-    
-    console.log(`✅ Developer関連データ 作成完了 (PayoutAccount: ${developers.length}件, MonthlyRevenue: ${totalMonthlyRevenue}件, PayoutHistory: ${totalPayouts}件)`);
+    console.log(`✅ Developer関連データ 作成完了 (MonthlyRevenue: ${totalMonthlyRevenue}件)`);
 }
 
 async function cleanupDatabase() {
@@ -1436,9 +1206,7 @@ async function cleanupDatabase() {
     // 中間テーブル (_AppToTag) は App または Tag を削除すれば自動的に消える (relationMode=prisma の場合)
     await prisma.notification.deleteMany({});
     await prisma.subscription.deleteMany({});
-    await prisma.payoutHistory.deleteMany({});
     await prisma.monthlyRevenue.deleteMany({});
-    await prisma.payoutAccount.deleteMany({});
     await prisma.developerRequest.deleteMany({});
     // App を削除 (Tagとのリレーションも解除される)
     await prisma.app.deleteMany({});
@@ -1449,8 +1217,8 @@ async function cleanupDatabase() {
     await prisma.tag.deleteMany({});
     await prisma.category.deleteMany({});
     // Plan, Settings は残すか、必要なら削除
-    // await prisma.plan.deleteMany({});
-    // await prisma.settings.deleteMany({});
+    await prisma.plan.deleteMany({}); // Planの削除も追加
+    // await prisma.setting.deleteMany({});
     console.log('✅ クリーンアップ完了');
 }
 
@@ -1466,13 +1234,13 @@ async function main() {
 
   // 2. 基本データのシード
   await seedSettings();
-  const plans = await seedPlans();
+  const plans = await seedPlans(); // プラン作成を追加
   const { categories, tags } = await seedCategoriesAndTags();
 
   // 3. ユーザー関連データのシード
-  const users = await seedUsers(plans);
+  const users = await seedUsers();
   await seedDeveloperRequests(users);
-  await seedSubscriptions(users, plans);
+  await seedSubscriptions(users);
 
   // 4. アプリ関連データのシード
   const apps = await seedApps(users, categories, tags);
@@ -1480,7 +1248,7 @@ async function main() {
   await seedBookmarks(users, apps);
 
   // 5. 開発者向けデータのシード
-  await seedDeveloperData(users);
+  // await seedDeveloperData(users); // 一時的に無効化
 
   // 6. その他のデータ
   await seedNotifications();

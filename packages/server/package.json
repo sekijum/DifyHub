@@ -26,7 +26,7 @@
     "prisma:seed-prod": "prisma db seed -- --environment production"
   },
   "dependencies": {
-    "@nestjs-modules/mailer": "^2.0.2",
+    "@nestjs-modules/mailer": "^1.6.1",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
@@ -36,7 +36,6 @@
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.5.0",
     "@types/lodash": "^4.17.16",
-    "@types/square-connect": "4.20201028.6",
     "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
@@ -49,9 +48,9 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
+    "payjp": "^2.3.0",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1",
-    "square": "^42.1.0"
+    "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

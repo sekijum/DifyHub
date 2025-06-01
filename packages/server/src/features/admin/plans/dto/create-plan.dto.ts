@@ -9,6 +9,7 @@ import {
   IsArray,
   IsEnum,
   IsIn,
+  Max,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PlanStatus } from "@prisma/client";
@@ -32,34 +33,20 @@ export class CreatePlanDto {
    */
   @IsNotEmpty()
   @IsNumber()
-  @Min(0)
+  @Min(50)
+  @Max(30000)
   @Type(() => Number)
   amount: number;
-
-  /**
-   * Square連携用カタログID
-   */
-  @IsOptional()
-  @IsString()
-  squareId?: string;
 
   /**
    * 課金周期
    */
   @IsOptional()
   @IsString()
-  @IsIn(["MONTHLY", "ANNUAL"], {
+  @IsIn(["month", "year"], {
     message: "課金周期はMONTHLYまたはANNUALのみ対応しています",
   })
-  billingPeriod?: string = "MONTHLY";
-
-  /**
-   * 公開プランかどうか
-   * features JSON に保存されます
-   */
-  @IsOptional()
-  @IsBoolean()
-  isPublic?: boolean = true;
+  billingPeriod?: "month" | "year" = "month";
 
   /**
    * ステータス

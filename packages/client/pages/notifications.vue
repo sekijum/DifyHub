@@ -126,7 +126,7 @@ const loadMoreNotifications = async () => {
     const response = await $api.get<NotificationApiResponse>('/notifications', {
       params: {
         page: currentPage.value,
-        pageSize: pageSize,
+        limit: pageSize,
         // 必要に応じてソート順などのパラメータを追加 (例: startAtの降順)
         // sortBy: 'startAt',
         // sortOrder: 'desc',

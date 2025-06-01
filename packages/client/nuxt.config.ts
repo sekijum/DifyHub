@@ -9,8 +9,13 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
-      appEnv: process.env.APP_ENV,
+      appEnv: process.env.NUXT_PUBLIC_APP_ENV,
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL,
+      payjpPublicKey: process.env.NUXT_PUBLIC_PAYJP_PUBLIC_KEY,
+      debug: process.env.NUXT_PUBLIC_APP_ENV !== 'production',
+      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL,
+      supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY,
+      supabaseBucketName: process.env.NUXT_PUBLIC_SUPABASE_BUCKET_NAME,
     },
   },
 

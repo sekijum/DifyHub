@@ -102,7 +102,7 @@
                            </v-btn>
                       </template>
                   </v-tooltip>
-                  <span class="text-body-2 mr-2 font-weight-medium">{{ formatLikes(app.likesCount) }}</span>
+                  <span class="text-body-2 mr-2 font-weight-medium">{{ formatLikes(app.likeCount) }}</span>
 
                    <!-- Dislike Button -->
                    <v-tooltip location="bottom" text="低評価">
@@ -122,7 +122,7 @@
                            </v-btn>
                       </template>
                   </v-tooltip>
-                  <span class="text-caption mr-2">{{ formatLikes(app.dislikesCount) }}</span> 
+                  <span class="text-caption mr-2">{{ formatLikes(app.dislikeCount) }}</span> 
               </div>
 
               <!-- Tags -->
@@ -390,8 +390,8 @@ interface AppDetail {
   isBookmarked?: boolean;
   isLiked?: boolean;
   isDisliked?: boolean;
-  likesCount: number;
-  dislikesCount: number;
+  likeCount: number;
+  dislikeCount: number;
 }
 
 // ★ Define AppDto as returned by the API (matches server/dto/app.dto.ts)
@@ -408,6 +408,8 @@ interface ApiAppDto {
   creatorId?: number | null;
   creatorName?: string;
   creatorAvatarUrl?: string | null;
+  likeCount: number;
+  dislikeCount: number;
 }
 
 // ★ Define RecommendedApp matching AppCard props
@@ -416,8 +418,8 @@ interface RecommendedApp {
     name: string;
     description: string; 
     imageUrl: string; 
-    likes: number; 
-    dislikes?: number; 
+    likeCount: number; 
+    dislikeCount: number; 
     requiresSubscription: boolean;
     usageCount: number;
     category?: { id: number; name: string } | null;
@@ -519,6 +521,9 @@ async function fetchAndSetRecommendedApps(currentAppId: number, categoryId?: num
     console.log(`Fetching recommended apps for ${currentAppId} with params:`, params); // Log params before serialization
     const response = await $api.get<RecommendedAppListResponse>(`/apps/${currentAppId}/recommended`, {
         params: params,
+        paramsSerializer: {
+          indexes: null, // tagIds[0], tagIds[1] ではなく tagIds, tagIds の形式で送信
+        }
     });
     console.log('Recommended apps response:', response.data);
 
@@ -528,8 +533,8 @@ async function fetchAndSetRecommendedApps(currentAppId: number, categoryId?: num
           name: apiApp.name,
           description: apiApp.description ?? '', 
           imageUrl: apiApp.thumbnailUrl ?? 'https://placehold.jp/300x300.png?text=No+Image', 
-          likes: 0, 
-          dislikes: 0,
+          likeCount: apiApp.likeCount, 
+          dislikeCount: apiApp.dislikeCount,
           requiresSubscription: apiApp.isSubscriptionLimited,
           usageCount: apiApp.usageCount,
           category: apiApp.category, 
@@ -620,15 +625,15 @@ const likeApp = async () => {
   }
   if (!app.value || ratingLoading.value) { return; }
   ratingLoading.value = true;
-  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likesCount, dislikes: app.value.dislikesCount };
+  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likeCount, dislikes: app.value.dislikeCount };
   const apiPayload = { type: 'LIKE' };
   try {
     const newState = !previousState.isLiked;
     isLiked.value = newState;
-    app.value.likesCount += newState ? 1 : -1;
-    if (newState && previousState.isDisliked) { isDisliked.value = false; app.value.dislikesCount--; }
+    app.value.likeCount += newState ? 1 : -1;
+    if (newState && previousState.isDisliked) { isDisliked.value = false; app.value.dislikeCount--; }
     await $api.post(`/me/ratings/apps/${app.value.id}`, apiPayload);
-  } catch (err) { console.error("Like/Unlike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likesCount = previousState.likes; app.value.dislikesCount = previousState.dislikes; } }
+  } catch (err) { console.error("Like/Unlike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likeCount = previousState.likes; app.value.dislikeCount = previousState.dislikes; } }
   finally { ratingLoading.value = false; }
 };
 
@@ -640,15 +645,15 @@ const dislikeApp = async () => {
   }
   if (!app.value || ratingLoading.value) { return; }
   ratingLoading.value = true;
-  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likesCount, dislikes: app.value.dislikesCount };
+  const previousState = { isLiked: isLiked.value, isDisliked: isDisliked.value, likes: app.value.likeCount, dislikes: app.value.dislikeCount };
   const apiPayload = { type: 'DISLIKE' };
   try {
     const newState = !previousState.isDisliked;
     isDisliked.value = newState;
-    app.value.dislikesCount += newState ? 1 : -1;
-    if (newState && previousState.isLiked) { isLiked.value = false; app.value.likesCount--; }
+    app.value.dislikeCount += newState ? 1 : -1;
+    if (newState && previousState.isLiked) { isLiked.value = false; app.value.likeCount--; }
     await $api.post(`/me/ratings/apps/${app.value.id}`, apiPayload);
-  } catch (err) { console.error("Dislike/Un-dislike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likesCount = previousState.likes; app.value.dislikesCount = previousState.dislikes; } }
+  } catch (err) { console.error("Dislike/Un-dislike API call failed:", err); if(app.value) { isLiked.value = previousState.isLiked; isDisliked.value = previousState.isDisliked; app.value.likeCount = previousState.likes; app.value.dislikeCount = previousState.dislikes; } }
   finally { ratingLoading.value = false; }
 };
 
@@ -671,10 +676,9 @@ const useApp = async () => {
   try {
     await $api.post(`/apps/${app.value.id}/use`);
     app.value.usageCount++;
-    if (app.value.appUrl) {
-      const targetUrl = app.value.appUrl.startsWith('/') ? router.resolve(app.value.appUrl).href : app.value.appUrl;
-      window.open(targetUrl, '_blank');
-    } else { console.warn('App URL not defined.'); const fallbackUrl = router.resolve(`/apps/${app.value.id}/use`).href; window.open(fallbackUrl, '_blank'); }
+    
+    const targetUrl = router.resolve(`/apps/${app.value.id}/use`).href;
+    window.open(targetUrl, '_blank');
   } catch (err: any) {
     console.error('Failed to use app:', err);
     if (err.response?.status === 403) { useAppError.value = err.response?.data?.message || 'このアプリを使用するには有料プランへの登録が必要です。'; }

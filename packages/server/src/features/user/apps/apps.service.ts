@@ -7,6 +7,7 @@ import {
 import { prisma } from "@/core/database/prisma.client";
 import { Prisma, AppStatus, RatingType, App } from "@prisma/client";
 import { FindAppListQueryDto, FindRecommendedAppListQueryDto } from "./dto";
+import { AppDto } from "./dto/app.dto";
 import { parseIds, buildOrderBy, shuffleArray } from "@/core/utils";
 import { logger } from "@/core/utils";
 import {
@@ -14,12 +15,42 @@ import {
   getPaginationParams,
 } from "@/core/utils/pagination.util";
 
+// 外部から参照可能な型定義をエクスポート
+export interface AppRatingCounts {
+  likeCount: number;
+  dislikeCount: number;
+  totalRatingCount: number;
+  positiveRatingRate: number;
+}
+
+export interface AppWithRatings extends Partial<App> {
+  likeCount: number;
+  dislikeCount: number;
+  totalRatingCount: number;
+  positiveRatingRate: number;
+  creator?: { id: number; name: string; avatarUrl: string | null } | null;
+  category?: { id: number; name: string } | null;
+}
+
+// アプリ詳細の戻り値型
+export interface AppDetailWithRatings extends App {
+  isBookmarked: boolean;
+  isLiked: boolean;
+  isDisliked: boolean;
+  likeCount: number;
+  dislikeCount: number;
+  totalRatingCount: number;
+  positiveRatingRate: number;
+}
+
 @Injectable()
 export class AppsService {
   /**
    * 公開済みアプリ一覧を取得
    */
   async findAppList(query: FindAppListQueryDto) {
+    logger.log(`アプリ一覧取得開始: ${JSON.stringify(query)}`);
+    
     try {
       const {
         skip,
@@ -31,20 +62,20 @@ export class AppsService {
         search,
       } = getPaginationParams(query);
 
-      const where: Prisma.AppWhereInput = {
+      const whereCondition: Prisma.AppWhereInput = {
         status: AppStatus.PUBLISHED,
         ...(search && { name: { contains: search, mode: "insensitive" } }),
         ...(query.categoryId && { categoryId: { in: [query.categoryId] } }),
         ...(query.tagId && { categoryId: { in: [query.tagId] } }),
       };
 
-      const orderBy = buildOrderBy(sortBy, sortOrder);
+      const orderByClause = buildOrderBy(sortBy, sortOrder);
 
-      // アプリリストと総件数を取得
-      const [appsList, total] = await prisma.$transaction([
+      // アプリリストと総件数を並行取得
+      const [publishedAppsList, totalAppsCount] = await prisma.$transaction([
         prisma.app.findMany({
-          where,
-          orderBy,
+          where: whereCondition,
+          orderBy: orderByClause,
           skip,
           take,
           include: {
@@ -53,36 +84,53 @@ export class AppsService {
             tags: { select: { id: true, name: true } },
           },
         }),
-        prisma.app.count({ where }),
+        prisma.app.count({ where: whereCondition }),
       ]);
 
-      // 評価数を取得
-      const appsWithCounts = await this.addRatingCounts(appsList);
+      // 評価数とレーティング情報を追加
+      const appsWithRatingData = await this.enrichAppsWithRatingData(publishedAppsList);
 
-      // レスポンスを作成
-      return createPaginatedResponse(appsWithCounts, total, page, limit);
+      // AppDtoに変換
+      const appDtos = appsWithRatingData.map(app => new AppDto({
+        id: app.id,
+        name: app.name,
+        description: app.description,
+        thumbnailUrl: app.thumbnailUrl,
+        creatorId: app.creatorId,
+        categoryId: app.categoryId,
+        isSubscriptionLimited: app.isSubscriptionLimited,
+        usageCount: app.usageCount,
+        createdAt: app.createdAt,
+        creator: app.creator,
+        category: app.category,
+        likeCount: app.likeCount,
+        dislikeCount: app.dislikeCount,
+      }));
+
+      logger.log(`アプリ一覧取得成功: 件数=${totalAppsCount}, ページ=${page}`);
+      return createPaginatedResponse(appDtos, totalAppsCount, page, limit);
     } catch (error) {
-      logger.error(`アプリ一覧取得エラー: ${JSON.stringify(error)}`);
+      logger.error(`アプリ一覧取得エラー: ${error.message}`, error.stack);
       throw new InternalServerErrorException("アプリ一覧の取得に失敗しました");
     }
   }
 
   /**
-   * アプリリストに評価数を追加する
+   * アプリリストに評価数と評価率データを追加する
    */
-  private async addRatingCounts(appList: Partial<App>[]) {
-    const appIds = appList.map((app) => app.id);
+  private async enrichAppsWithRatingData(appsList: Partial<App>[]): Promise<AppWithRatings[]> {
+    const appIdList = appsList.map((app) => app.id).filter(Boolean);
 
-    if (appIds.length === 0) {
-      return appList;
+    if (appIdList.length === 0) {
+      return appsList.map(app => this.mapAppWithDefaultRatings(app));
     }
 
     try {
       // 評価数を取得
-      const counts = await prisma.rating.groupBy({
+      const ratingCounts = await prisma.rating.groupBy({
         by: ["appId", "type"],
         where: {
-          appId: { in: appIds },
+          appId: { in: appIdList },
         },
         _count: {
           _all: true,
@@ -90,41 +138,92 @@ export class AppsService {
       });
 
       // 評価数をマップに整理
-      const countsMap = new Map<number, { likes: number; dislikes: number }>();
-
-      counts.forEach((item) => {
-        if (!countsMap.has(item.appId)) {
-          countsMap.set(item.appId, { likes: 0, dislikes: 0 });
-        }
-
-        const current = countsMap.get(item.appId)!;
-
-        if (item.type === RatingType.LIKE) {
-          current.likes = item._count._all;
-        } else if (item.type === RatingType.DISLIKE) {
-          current.dislikes = item._count._all;
-        }
-      });
+      const ratingsMapByAppId = this.createRatingsCountMap(ratingCounts);
 
       // アプリデータと評価数を結合
-      return appList.map((app) => {
-        const counts = countsMap.get(app.id) || { likes: 0, dislikes: 0 };
-        return {
-          ...app,
-          likesCount: counts.likes,
-          dislikesCount: counts.dislikes,
-        };
+      return appsList.map((app) => {
+        const appRatingData = ratingsMapByAppId.get(app.id);
+        return this.mapAppWithRatings(app, appRatingData);
       });
     } catch (error) {
-      logger.error(`アプリ評価数取得エラー: ${JSON.stringify(error)}`);
-      return appList; // エラー時は元のデータをそのまま返す
+      logger.error(`アプリ評価数取得エラー: ${error.message}`, error.stack);
+      // エラー時はデフォルト値で返す
+      return appsList.map(app => this.mapAppWithDefaultRatings(app));
     }
+  }
+
+  /**
+   * 評価数データをマップに変換
+   */
+  private createRatingsCountMap(ratingCounts: any[]): Map<number, AppRatingCounts> {
+    const ratingsMap = new Map<number, AppRatingCounts>();
+
+    ratingCounts.forEach((ratingItem) => {
+      if (!ratingsMap.has(ratingItem.appId)) {
+        ratingsMap.set(ratingItem.appId, {
+          likeCount: 0,
+          dislikeCount: 0,
+          totalRatingCount: 0,
+          positiveRatingRate: 0,
+        });
+      }
+
+      const currentRatingData = ratingsMap.get(ratingItem.appId)!;
+
+      if (ratingItem.type === RatingType.LIKE) {
+        currentRatingData.likeCount = ratingItem._count._all;
+      } else if (ratingItem.type === RatingType.DISLIKE) {
+        currentRatingData.dislikeCount = ratingItem._count._all;
+      }
+    });
+
+    // 総評価数と評価率を計算
+    ratingsMap.forEach((ratingData) => {
+      ratingData.totalRatingCount = ratingData.likeCount + ratingData.dislikeCount;
+      ratingData.positiveRatingRate = ratingData.totalRatingCount > 0 
+        ? ratingData.likeCount / ratingData.totalRatingCount 
+        : 0;
+    });
+
+    return ratingsMap;
+  }
+
+  /**
+   * アプリデータに評価情報をマッピング
+   */
+  private mapAppWithRatings(app: Partial<App>, ratingData?: AppRatingCounts): AppWithRatings {
+    if (ratingData) {
+      return {
+        ...app,
+        likeCount: ratingData.likeCount,
+        dislikeCount: ratingData.dislikeCount,
+        totalRatingCount: ratingData.totalRatingCount,
+        positiveRatingRate: ratingData.positiveRatingRate,
+      };
+    }
+
+    return this.mapAppWithDefaultRatings(app);
+  }
+
+  /**
+   * デフォルトの評価データでアプリをマッピング
+   */
+  private mapAppWithDefaultRatings(app: Partial<App>): AppWithRatings {
+    return {
+      ...app,
+      likeCount: 0,
+      dislikeCount: 0,
+      totalRatingCount: 0,
+      positiveRatingRate: 0,
+    };
   }
 
   /**
    * アプリ詳細を取得
    */
-  async findAppById(appId: number, userId?: number) {
+  async findAppById(appId: number, userId?: number): Promise<AppDetailWithRatings> {
+    logger.log(`アプリ詳細取得開始: AppID=${appId}, UserID=${userId}`);
+    
     try {
       // クエリに必要なinclude句を構築
       const includeClause: Prisma.AppInclude = {
@@ -153,7 +252,7 @@ export class AppsService {
       };
 
       // 並行でアプリデータと評価数を取得
-      const [app, likesCount, dislikesCount] = await Promise.all([
+      const [appDetails, likeCount, dislikeCount] = await Promise.all([
         prisma.app.findUniqueOrThrow({
           where: { id: appId, status: AppStatus.PUBLISHED },
           include: includeClause,
@@ -167,28 +266,34 @@ export class AppsService {
       ]);
 
       // ユーザー固有データの設定
-      const includedBookmarks = (app as any).bookmarks;
-      const includedRatings = (app as any).ratings;
+      const userBookmarks = (appDetails as any).bookmarks;
+      const userRatings = (appDetails as any).ratings;
 
+      const totalRatingCount = likeCount + dislikeCount;
+      const positiveRatingRate = totalRatingCount > 0 ? likeCount / totalRatingCount : 0;
+
+      logger.log(`アプリ詳細取得成功: AppID=${appId}`);
       return {
-        ...app,
-        isBookmarked: !!(includedBookmarks?.length > 0),
+        ...appDetails,
+        isBookmarked: !!(userBookmarks?.length > 0),
         isLiked: !!(
-          includedRatings?.length > 0 &&
-          includedRatings[0].type === RatingType.LIKE
+          userRatings?.length > 0 &&
+          userRatings[0].type === RatingType.LIKE
         ),
         isDisliked: !!(
-          includedRatings?.length > 0 &&
-          includedRatings[0].type === RatingType.DISLIKE
+          userRatings?.length > 0 &&
+          userRatings[0].type === RatingType.DISLIKE
         ),
-        likesCount,
-        dislikesCount,
+        likeCount,
+        dislikeCount,
+        totalRatingCount,
+        positiveRatingRate,
       };
     } catch (error) {
       if (error.code === "P2025") {
         throw new NotFoundException(`アプリID ${appId} が見つかりません`);
       }
-      logger.error(`アプリ詳細取得エラー: ${JSON.stringify(error)}`);
+      logger.error(`アプリ詳細取得エラー: AppID=${appId}, Error=${error.message}`, error.stack);
       throw new InternalServerErrorException("アプリ詳細の取得に失敗しました");
     }
   }
@@ -196,10 +301,12 @@ export class AppsService {
   /**
    * アプリ使用回数を更新
    */
-  async useApp(appId: number, userId: number) {
+  async useApp(appId: number, userId: number): Promise<void> {
+    logger.log(`アプリ使用開始: AppID=${appId}, UserID=${userId}`);
+    
     try {
       // アプリデータを検索
-      const app = await prisma.app.findUnique({
+      const appData = await prisma.app.findUnique({
         where: { id: appId, status: AppStatus.PUBLISHED },
         select: {
           id: true,
@@ -207,15 +314,15 @@ export class AppsService {
         },
       });
 
-      if (!app) {
+      if (!appData) {
         throw new NotFoundException(
           `アプリID ${appId} が見つからないか、公開されていません`,
         );
       }
 
       // サブスクリプション制限確認
-      if (app.isSubscriptionLimited) {
-        await this.validateUserSubscription(userId);
+      if (appData.isSubscriptionLimited) {
+        await this.validateUserSubscriptionAccess(userId);
       }
 
       // 利用回数を更新
@@ -223,6 +330,8 @@ export class AppsService {
         where: { id: appId },
         data: { usageCount: { increment: 1 } },
       });
+
+      logger.log(`アプリ使用成功: AppID=${appId}, UserID=${userId}`);
     } catch (error) {
       if (
         error instanceof NotFoundException ||
@@ -230,7 +339,7 @@ export class AppsService {
       ) {
         throw error;
       }
-      logger.error(`アプリ使用回数更新エラー: ${JSON.stringify(error)}`);
+      logger.error(`アプリ使用回数更新エラー: AppID=${appId}, UserID=${userId}, Error=${error.message}`, error.stack);
       throw new InternalServerErrorException(
         "アプリ使用回数の更新に失敗しました",
       );
@@ -238,11 +347,11 @@ export class AppsService {
   }
 
   /**
-   * ユーザーのサブスクリプションを検証
+   * ユーザーのサブスクリプションアクセス権を検証
    */
-  private async validateUserSubscription(userId: number) {
+  private async validateUserSubscriptionAccess(userId: number): Promise<void> {
     try {
-      const user = await prisma.user.findUnique({
+      const userData = await prisma.user.findUnique({
         where: { id: userId },
         select: {
           subscription: {
@@ -251,7 +360,7 @@ export class AppsService {
         },
       });
 
-      if (!user || user.subscription?.planName === "free") {
+      if (!userData || userData.subscription?.planName === "free") {
         throw new ForbiddenException(
           "このアプリは有料プランでのみ利用可能です",
         );
@@ -261,7 +370,7 @@ export class AppsService {
         throw error;
       }
       logger.error(
-        `ユーザーサブスクリプション検証エラー: ${JSON.stringify(error)}`,
+        `ユーザーサブスクリプション検証エラー: UserID=${userId}, Error=${error.message}`, error.stack
       );
       throw new InternalServerErrorException(
         "ユーザーサブスクリプションの検証に失敗しました",
@@ -276,6 +385,8 @@ export class AppsService {
     currentAppId: number,
     query: FindRecommendedAppListQueryDto,
   ) {
+    logger.log(`おすすめアプリ取得開始: CurrentAppID=${currentAppId}, Query=${JSON.stringify(query)}`);
+    
     try {
       const { limit, page } = getPaginationParams(query);
       const { categoryId, tagIds } = query;
@@ -293,16 +404,16 @@ export class AppsService {
       }
 
       // 検索条件構築
-      const where: Prisma.AppWhereInput = {
+      const whereCondition: Prisma.AppWhereInput = {
         status: AppStatus.PUBLISHED,
         id: { not: currentAppId },
         ...(orConditions.length > 0 && { OR: orConditions }),
       };
 
       // アプリ取得
-      const [apps, total] = await prisma.$transaction([
+      const [recommendedApps, totalCount] = await prisma.$transaction([
         prisma.app.findMany({
-          where,
+          where: whereCondition,
           take: fetchLimit,
           include: {
             category: { select: { id: true, name: true } },
@@ -310,19 +421,19 @@ export class AppsService {
           },
           orderBy: { usageCount: "desc" },
         }),
-        prisma.app.count({ where }),
+        prisma.app.count({ where: whereCondition }),
       ]);
 
       // ランダム化して指定数に絞り込み
-      const shuffledApps = shuffleArray(apps).slice(0, limit);
+      const shuffledApps = shuffleArray(recommendedApps).slice(0, limit);
 
       // 評価数を追加
-      const appsWithCounts = await this.addRatingCounts(shuffledApps);
+      const appsWithRatingData = await this.enrichAppsWithRatingData(shuffledApps);
 
-      // レスポンスを作成
-      return createPaginatedResponse(appsWithCounts, total, page, limit);
+      logger.log(`おすすめアプリ取得成功: CurrentAppID=${currentAppId}, Count=${shuffledApps.length}`);
+      return createPaginatedResponse(appsWithRatingData, totalCount, page, limit);
     } catch (error) {
-      logger.error(`おすすめアプリ取得エラー: ${JSON.stringify(error)}`);
+      logger.error(`おすすめアプリ取得エラー: CurrentAppID=${currentAppId}, Error=${error.message}`, error.stack);
       throw new InternalServerErrorException(
         "おすすめアプリの取得に失敗しました",
       );

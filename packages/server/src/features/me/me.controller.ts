@@ -13,6 +13,7 @@ import {
   Delete,
   Param,
   ParseIntPipe,
+  Req,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "@/core/auth/guards/jwt-auth.guard";
 import { MeService } from "./me.service";
@@ -20,6 +21,7 @@ import {
   CreateBookmarkDto,
   CreateBookmarkFolderDto,
   CreateDeveloperRequestDto,
+  FindBookmarksInFolderQueryDto,
   FindLikedAppListQueryDto,
   RateAppDto,
   UpdateAvatarDto,
@@ -27,7 +29,6 @@ import {
   UpdateNameDto,
   UpdatePasswordDto,
   UpdatePlanDto,
-  FindBookmarksInFolderQueryDto,
 } from "./dto";
 import { CurrentUser } from "@/core/auth/decorators/current-user.decorator";
 import { UserPayload } from "@/core/auth/types/user-payload.interface";
@@ -81,14 +82,13 @@ export class MeController {
     return this.meService.updateMyAvatarUrl(user.userId, updateAvatarDto);
   }
 
+
   /**
-   * プランを更新
+   * カード情報付きでプラン変更
    */
   @Patch("plan")
-  updateMyPlan(
-    @CurrentUser() user: UserPayload,
-    @Body() updatePlanDto: UpdatePlanDto,
-  ) {
+  @UseGuards(JwtAuthGuard)
+  async updateMyPlanWithCard(@CurrentUser() user: UserPayload, @Body() updatePlanDto: UpdatePlanDto) {
     return this.meService.updateMyPlan(user.userId, updatePlanDto);
   }
 
@@ -101,6 +101,16 @@ export class MeController {
     @Query() query: FindLikedAppListQueryDto,
   ) {
     return this.meService.findLikedAppList(user.userId, query);
+  }
+
+  /**
+   * 請求履歴を取得
+   */
+  @Get("billing-history")
+  findBillingHistory(
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.meService.findBillingHistory(user.userId);
   }
 
   /**

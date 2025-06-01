@@ -5,7 +5,7 @@ function API(): AxiosInstance {
   const { $storage } = useNuxtApp();
 
   const api: AxiosInstance = axios.create({
-    baseURL: config.public.apiBase,
+    baseURL: config.public.apiBaseUrl,
     timeout: 10000,
     headers: {
       'Content-Type': 'application/json',

@@ -1,5 +1,5 @@
 import { IsOptional, IsInt, IsArray } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { PaginationDto } from "@/core/dto/pagination.dto";
 
 /**
@@ -19,5 +19,11 @@ export class FindRecommendedAppListQueryDto extends PaginationDto {
    */
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
+  @Transform(({ value }) => {
+    if (!value) return [];
+    const arr = Array.isArray(value) ? value : [value];
+    return arr.map(v => Number(v));
+  })
   tagIds?: number[];
 }

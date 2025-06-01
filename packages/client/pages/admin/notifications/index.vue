@@ -218,7 +218,7 @@
   import { useNuxtApp } from 'nuxt/app';
   import type { VDataTableServer } from 'vuetify/components';
   import PageTitle from '~/components/PageTitle.vue';
-  import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
+  import { useGlobalModal } from '~/composables/useGlobalModal';
 
   // 型定義（useNotificationApiから移行）
   export type NotificationLevel = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
@@ -260,6 +260,7 @@
   const router = useRouter();
   const route = useRoute();
   const { $api } = useNuxtApp();
+  const { confirmDelete } = useGlobalModal();
   
   // ローディングとエラー状態
   const loading = ref(false);

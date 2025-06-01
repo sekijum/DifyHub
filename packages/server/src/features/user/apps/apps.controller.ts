@@ -8,11 +8,12 @@ import {
   UseGuards,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AppsService } from "./apps.service";
+import { AppsService, AppWithRatings, AppDetailWithRatings } from "./apps.service";
 import { FindAppListQueryDto, FindRecommendedAppListQueryDto } from "./dto";
 import { ParseIntPipe } from "@nestjs/common";
 import { JwtAuthGuard } from "@/core/auth/guards/jwt-auth.guard";
 import { OptionalJwtAuthGuard } from "@/core/auth/guards/optional-jwt-auth.guard";
+import { PaginatedResponse } from "@/core/types/api-response.type";
 import { Request } from "express";
 
 /**

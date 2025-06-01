@@ -34,16 +34,15 @@ export class AdminPlansController {
   /**
    * プラン詳細を取得
    */
-  @Get(":id")
-  async findPlanById(@Param("id") id: string) {
-    return this.adminPlansService.findPlanById(id);
+  @Get(":name")
+  async findPlanByName(@Param("name") name: string) {
+    return this.adminPlansService.findPlanByName(name);
   }
 
   /**
    * プランを作成
    */
   @Post()
-  @HttpCode(HttpStatus.CREATED)
   async createPlan(@Body() createPlanDto: CreatePlanDto) {
     return this.adminPlansService.createPlan(createPlanDto);
   }
@@ -51,20 +50,19 @@ export class AdminPlansController {
   /**
    * プランを更新
    */
-  @Patch(":id")
+  @Patch(":name")
   async updatePlan(
-    @Param("id") id: string,
+    @Param("name") name: string,
     @Body() updatePlanDto: UpdatePlanDto,
   ) {
-    return this.adminPlansService.updatePlan(id, updatePlanDto);
+    return this.adminPlansService.updatePlan(name, updatePlanDto);
   }
 
   /**
    * プランを削除
    */
-  @Delete(":id")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deletePlan(@Param("id") id: string) {
-    await this.adminPlansService.deletePlan(id);
+  @Delete(":name")
+  async deletePlan(@Param("name") name: string) {
+    await this.adminPlansService.deletePlan(name);
   }
 }

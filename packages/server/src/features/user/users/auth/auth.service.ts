@@ -11,7 +11,7 @@ import { User, Prisma } from "@prisma/client";
 import { MailerService } from "@/core/mailer/mailer.service";
 import { prisma } from "@/core/database/prisma.client";
 import { hashPassword, comparePassword } from "@/core/utils/hashing.util";
-import { square } from "@/core/square/square.client";
+import { payjp } from "@/core/payjp";
 
 // JWTペイロード型定義
 interface JwtPayload {
@@ -52,82 +52,6 @@ export class AuthService {
   }
 
   /**
-   * Square顧客IDを作成します
-   */
-  private async createSquareCustomer(name: string, email: string) {
-    try {
-      this.logger.log("Square顧客作成開始", { name, email });
-
-      const customerResponse = await square.customers.create({
-        givenName: name,
-        emailAddress: email,
-        referenceId: `user_${Date.now()}`,
-      });
-
-      if (customerResponse.customer?.id) {
-        return customerResponse.customer.id;
-      }
-
-      throw new Error("Square顧客作成レスポンスが無効です");
-    } catch (error) {
-      this.logger.error(`Square顧客作成エラー: ${JSON.stringify(error)}`, {
-        name,
-        email,
-      });
-      // フォールバックID（実際のSquare連携はできない）
-      return `cust_${Math.random().toString(36).substring(2, 10)}`;
-    }
-  }
-
-  /**
-   * 無料プランのSquareサブスクリプションを作成します
-   */
-  private async createFreeSubscription(
-    userId: number,
-    squareCustomerId: string,
-  ) {
-    try {
-      // フリープランの情報を取得
-      const freePlan = await prisma.plan.findUnique({
-        where: { name: "free" },
-      });
-
-      if (!freePlan || !freePlan.squareCatalogId) {
-        this.logger.warn(
-          "無料プラン情報が見つからない、またはcatalogIDがありません",
-          { userId },
-        );
-        return null;
-      }
-
-      this.logger.log("無料プランのサブスクリプション作成", {
-        userId,
-        customerId: squareCustomerId,
-        planId: freePlan.squareCatalogId,
-      });
-
-      const subscriptionResponse = await square.subscriptions.create({
-        idempotencyKey: `${userId}_free_${Date.now()}`,
-        locationId: process.env.SQUARE_LOCATION_ID || "",
-        planVariationId: freePlan.squareCatalogId,
-        customerId: squareCustomerId,
-      });
-
-      if (subscriptionResponse.subscription?.id) {
-        return subscriptionResponse.subscription.id;
-      }
-
-      return null;
-    } catch (error) {
-      this.logger.error(
-        `無料プランサブスクリプション作成エラー: ${JSON.stringify(error)}`,
-        { userId },
-      );
-      return null;
-    }
-  }
-
-  /**
    * LocalStrategy (メールアドレスとパスワード認証) で使用されるユーザー検証ロジック
    */
   async validateUser(email: string, pass: string) {
@@ -160,56 +84,44 @@ export class AuthService {
    * 新規ユーザー登録を行います
    */
   async signUp(dto: SignUpDto) {
-    const { email, password, name, avatarUrl } = dto;
-
     try {
       // メールアドレス重複チェック
-      const existingUser = await prisma.user.findUnique({ where: { email } });
+      const existingUser = await prisma.user.findUnique({ where: { email: dto.email } });
       if (existingUser) {
         throw new ConflictException("このメールアドレスは既に使用されています");
       }
 
       // パスワードハッシュ化
-      const hashedPassword = await hashPassword(password);
+      const hashedPassword = await hashPassword(dto.password);
 
-      // Square顧客ID作成
-      const squareCustomerId = await this.createSquareCustomer(name, email);
-
-      // ユーザー作成（デフォルトフォルダとサブスクリプション情報も同時に作成）
       const newUser = await prisma.user.create({
         data: {
-          email,
+          email: dto.email,
           password: hashedPassword,
-          name,
-          avatarUrl,
-          bookmarkFolders: {
-            create: {
-              name: "後で見る",
-              isDefault: true,
-            },
-          },
+          name: dto.name,
+          avatarUrl: dto.avatarUrl ?? null,
+        },
+      });
+
+      const payjpCustomer = await payjp.customers.create({ email: dto.email, description: dto.name });
+
+      if (!payjpCustomer.id) {
+        throw new InternalServerErrorException("PayJP顧客作成に失敗しました");
+      }
+
+      const freePlan = await prisma.plan.findFirstOrThrow({ where: { isDefault: true } });
+
+      await prisma.user.update({
+        where: { id: newUser.id },
+        data: { 
+          payjpCustomerId: payjpCustomer.id,
           subscription: {
             create: {
-              planName: "free",
-              squareCustomerId,
+              planName: freePlan.name,
             },
           },
         },
       });
-
-      // 無料プランサブスクリプション作成
-      const subscriptionId = await this.createFreeSubscription(
-        newUser.id,
-        squareCustomerId,
-      );
-
-      // サブスクリプションIDがある場合のみ更新
-      if (subscriptionId) {
-        await prisma.subscription.update({
-          where: { userId: newUser.id },
-          data: { squareSubscriptionId: subscriptionId },
-        });
-      }
 
       // ウェルカムメール送信
       try {
@@ -243,7 +155,7 @@ export class AuthService {
       }
 
       this.logger.error(`ユーザー登録エラー: ${JSON.stringify(error)}`, {
-        email,
+        email: dto.email,
       });
       throw new InternalServerErrorException(
         "ユーザー登録中にエラーが発生しました。しばらくしてから再度お試しください",

@@ -6,6 +6,7 @@ import { TagsModule } from "./tags/tags.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { SettingModule } from "./setting/setting.module";
 import { AuthModule } from "./users/auth/auth.module";
+import { UserPlansModule } from "./plans/user.plans.module";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuthModule } from "./users/auth/auth.module";
     TagsModule,
     NotificationsModule,
     SettingModule,
+    UserPlansModule,
   ],
   exports: [
     UsersModule,
@@ -25,6 +27,7 @@ import { AuthModule } from "./users/auth/auth.module";
     TagsModule,
     NotificationsModule,
     SettingModule,
+    UserPlansModule,
   ],
 })
 export class UserModule {}

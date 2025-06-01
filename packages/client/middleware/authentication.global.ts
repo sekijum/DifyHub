@@ -15,7 +15,6 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
   try {
     const response = await $api.get('/me/profile');
     const authenticatedUser = response.data;
-    console.log('authenticatedUser', authenticatedUser);
     nuxtApp.payload.user = authenticatedUser;
     nuxtApp.payload.isLoggedIn = true;
     nuxtApp.payload.isAdministrator = authenticatedUser.role === 'ADMINISTRATOR';

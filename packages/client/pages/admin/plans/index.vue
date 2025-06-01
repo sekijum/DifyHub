@@ -19,7 +19,7 @@
 
     <div class="d-flex justify-space-between align-center mb-4">
       <PageTitle title="プラン管理" />
-      <v-btn color="primary" prepend-icon="mdi-plus-circle-outline" @click="goToCreatePage">
+      <v-btn color="primary" prepend-icon="mdi-plus-circle-outline" @click="handleCreatePlan">
         新規登録
       </v-btn>
     </div>
@@ -39,7 +39,10 @@
             :items-per-page-options="itemsPerPageOptions"
           >
             <template v-slot:item.amount="{ item }">
-              {{ item.amount.toLocaleString() }} 円/月
+              {{ item.amount.toLocaleString() }} 円
+            </template>
+            <template v-slot:item.interval="{ item }">
+              {{ getIntervalText(item.interval) }}
             </template>
             <template v-slot:item.features="{ item }">
               {{ getFeaturesSummary(item.features) }}
@@ -93,40 +96,8 @@
     </v-row>
 
     <!-- Dialogs -->
-    <ConfirmationDialog
-      v-model="isDeleteDialogOpen"
-      title="プラン削除確認"
-      confirm-text="削除する"
-      confirm-color="error"
-      @confirm="confirmDeletePlan"
-    >
-      <div>
-        <p class="mb-4"><strong>プラン「{{ planToDelete?.name }}」</strong>を削除しますか？</p>
-        <v-alert
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="mb-2"
-        >
-          削除されたプランは元に戻すことができません。
-        </v-alert>
-        <v-alert
-          type="info"
-          variant="tonal"
-          density="compact"
-        >
-          このプランを利用中のユーザーがいる場合は削除できません。
-        </v-alert>
-      </div>
-    </ConfirmationDialog>
 
     <!-- Snackbar -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
-      {{ snackbar.text }}
-      <template v-slot:actions>
-        <v-btn variant="text" @click="snackbar.show = false">閉じる</v-btn>
-      </template>
-    </v-snackbar>
   </v-container>
 </template>
 
@@ -135,8 +106,10 @@ import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useNuxtApp } from 'nuxt/app';
 import type { VDataTable } from 'vuetify/components';
+import type { Plan } from '~/types/plan';
+import { PlanStatus, PlanInterval } from '~/types/plan';
 import PageTitle from '~/components/PageTitle.vue';
-import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
+import { useGlobalModal } from '~/composables/useGlobalModal';
 
 definePageMeta({
   layout: 'admin',
@@ -144,6 +117,7 @@ definePageMeta({
 
 const router = useRouter();
 const { $api } = useNuxtApp();
+const { confirmDelete, showPrimaryModal, showWarningModal } = useGlobalModal();
 
 // ローディングとエラー状態
 const loading = ref(false);
@@ -156,25 +130,14 @@ type ReadonlyHeaders = VDataTable['$props']['headers'];
 const headers: ReadonlyHeaders = [
   { title: 'プラン名', key: 'name', align: 'start' },
   { title: '月額料金', key: 'amount', align: 'end' },
+  { title: '課金間隔', key: 'interval', align: 'center' },
   { title: '機能', key: 'features', align: 'start' },
   { title: 'ステータス', key: 'status', align: 'center' },
   { title: 'アクション', key: 'actions', sortable: false, align: 'end', width: 100 },
 ];
 
-// Interface for plan data
-interface Plan {
-  name: string;
-  amount: number;
-  features: any; // JSONフィールド
-  status: 'ACTIVE' | 'PRIVATE' | 'SUSPENDED';
-  createdAt: string;
-  updatedAt: string;
-}
-
 // 状態
 const plans = ref<Plan[]>([]);
-const isDeleteDialogOpen = ref(false);
-const planToDelete = ref<Plan | null>(null);
 const snackbar = reactive({ show: false, text: '', color: 'success' });
 
 // Items per page options
@@ -190,7 +153,8 @@ const getFeaturesSummary = (features: any): string => {
   
   try {
     // additionalFeaturesがあれば表示
-    const additionalFeatures = features.additionalFeatures || [];
+    const additionalFeatures = Array.isArray(features) ? features : 
+      (features.additionalFeatures || []);
     
     // 「+」で始まる機能（または明示的な+がないもの）を含む機能としてカウント
     const includedFeatures = additionalFeatures.filter((f: string) => {
@@ -216,63 +180,95 @@ const getFeaturesSummary = (features: any): string => {
   }
 };
 
+// 課金間隔を表示
+const getIntervalText = (interval: PlanInterval | string) => {
+  switch (interval) {
+    case PlanInterval.MONTH: return '月額';
+    case PlanInterval.YEAR: return '年額';
+    default: return interval;
+  }
+};
+
 // ステータスに応じた表示
 const getStatusColor = (status: string) => {
   switch (status) {
-    case 'ACTIVE': return 'success';
-    case 'PRIVATE': return 'grey';
-    case 'SUSPENDED': return 'error';
+    case PlanStatus.ACTIVE: return 'success';
+    case PlanStatus.SUSPENDED: return 'error';
     default: return 'primary';
   }
 };
 
 const getStatusText = (status: string) => {
   switch (status) {
-    case 'ACTIVE': return '有効';
-    case 'PRIVATE': return '非公開';
-    case 'SUSPENDED': return '停止';
+    case PlanStatus.ACTIVE: return '有効';
+    case PlanStatus.SUSPENDED: return '停止';
     default: return status;
   }
 };
 
 // CRUD Actions
-const goToEditPage = (plan: Plan) => {
-  router.push(`/admin/plans/${encodeURIComponent(plan.name)}/edit`);
+const handleCreatePlan = async () => {
+  const confirmed = await showPrimaryModal(
+    '新しいプランを作成しますか？',
+    'プラン作成確認'
+  );
+  
+  if (confirmed) {
+    router.push('/admin/plans/new');
+  }
 };
 
-const goToCreatePage = () => {
-  router.push('/admin/plans/new');
+const handleEditPlan = async (plan: Plan) => {
+  const confirmed = await showWarningModal(
+    `プラン「${plan.name}」を編集しますか？既存の利用者に影響が出る可能性があります。`,
+    'プラン編集確認'
+  );
+  
+  if (confirmed) {
+    router.push(`/admin/plans/${encodeURIComponent(plan.name)}/edit`);
+  }
 };
 
-const openDeleteDialog = (plan: Plan) => {
-  planToDelete.value = plan;
-  isDeleteDialogOpen.value = true;
-};
-
-const confirmDeletePlan = async () => {
-  if (!planToDelete.value) return;
-  const planName = planToDelete.value.name;
+const handleDeletePlan = async (plan: Plan) => {
+  const confirmed = await confirmDelete(plan.name, 'プラン');
+  
+  if (!confirmed) return;
   
   loading.value = true;
   error.value = null;
   
   try {
-    await $api.delete(`/admin/plans/${encodeURIComponent(planName)}`);
+    await $api.delete(`/admin/plans/${encodeURIComponent(plan.name)}`);
     snackbar.text = 'プランを削除しました。';
     snackbar.color = 'success';
-    // 再読み込み
+    snackbar.show = true;
     fetchPlans();
   } catch (err: any) {
-    error.value = err.response?.data?.message || `プラン「${planName}」の削除中にエラーが発生しました`;
-    snackbar.text = error.value || `プラン「${planName}」の削除中にエラーが発生しました`;
+    error.value = err.response?.data?.message || `プラン「${plan.name}」の削除中にエラーが発生しました`;
+    snackbar.text = error.value || `プラン「${plan.name}」の削除中にエラーが発生しました`;
     snackbar.color = 'error';
+    snackbar.show = true;
     console.error(`プラン削除エラー:`, err);
   } finally {
     loading.value = false;
-    snackbar.show = true;
-    isDeleteDialogOpen.value = false;
-    planToDelete.value = null;
   }
+};
+
+// 互換性のための古い関数名（削除予定）
+const goToEditPage = (plan: Plan) => {
+  handleEditPlan(plan);
+};
+
+const goToCreatePage = () => {
+  handleCreatePlan();
+};
+
+const openDeleteDialog = (plan: Plan) => {
+  handleDeletePlan(plan);
+};
+
+const confirmDeletePlan = async () => {
+  // 削除予定
 };
 
 // プラン一覧を取得
@@ -281,14 +277,17 @@ const fetchPlans = async () => {
   error.value = null;
   
   try {
+    // APIを直接使用
     const response = await $api.get('/admin/plans');
-    console.log('Response data:', response.data);
-    
-    if (Array.isArray(response.data.data)) {
+    // APIレスポンス形式に合わせて処理
+    if (response.data && Array.isArray(response.data)) {
+      plans.value = response.data;
+    } else if (response.data && Array.isArray(response.data.data)) {
       plans.value = response.data.data;
+    } else if (response.data) {
+      plans.value = [response.data];
     } else {
       plans.value = [];
-      console.error('返却データが配列ではありません:', response.data);
     }
   } catch (err: any) {
     error.value = err.response?.data?.message || 'プランの取得中にエラーが発生しました';

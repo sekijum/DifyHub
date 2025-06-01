@@ -110,6 +110,21 @@
                   </v-btn>
                 </template>
               </v-tooltip>
+              
+              <v-tooltip location="top" :text="item.status === UserStatus.ACTIVE ? '停止' : '有効化'">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    icon
+                    size="small"
+                    variant="text"
+                    :color="item.status === UserStatus.ACTIVE ? 'error' : 'success'"
+                    @click="item.status === UserStatus.ACTIVE ? handleDeactivateDeveloper(item) : handleReactivateDeveloper(item)"
+                  >
+                    <v-icon>{{ item.status === UserStatus.ACTIVE ? 'mdi-pause-circle-outline' : 'mdi-play-circle-outline' }}</v-icon>
+                  </v-btn>
+                </template>
+              </v-tooltip>
             </div>
           </template>
           
@@ -119,26 +134,6 @@
           </template>
         </v-data-table-server>
       </v-card>
-
-      <!-- 停止確認ダイアログ -->
-      <ConfirmationDialog
-        v-model="isDeactivateDialogOpen"
-        title="開発者停止確認"
-        :message="`開発者「${developerToModify?.name}」を停止しますか？開発者はアプリの管理や新規公開ができなくなります。`"
-        confirm-text="停止する"
-        confirm-color="error"
-        @confirm="confirmDeactivateDeveloper"
-      />
-      
-      <!-- 有効化確認ダイアログ -->
-      <ConfirmationDialog
-        v-model="isReactivateDialogOpen"
-        title="開発者有効化確認"
-        :message="`開発者「${developerToModify?.name}」を再度有効化しますか？`"
-        confirm-text="有効化する"
-        confirm-color="success"
-        @confirm="confirmReactivateDeveloper"
-      />
 
       <!-- エラー通知用スナックバー -->
       <v-snackbar
@@ -165,9 +160,9 @@
   import { useRouter, useRoute } from 'vue-router';
   import type { VDataTableServer } from 'vuetify/components';
   import PageTitle from '~/components/PageTitle.vue';
-  import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
   import { UserStatus } from '~/constants/user-status';
   import type { UserStatusType } from '~/constants/user-status';
+  import { useGlobalModal } from '~/composables/useGlobalModal';
 
   definePageMeta({
     layout: 'admin',
@@ -176,6 +171,7 @@
   const router = useRouter();
   const route = useRoute();
   const { $api } = useNuxtApp();
+  const { showErrorModal, showWarningModal } = useGlobalModal();
 
   // --- Types and Interfaces ---
   type SortItem = { key: string; order: 'asc' | 'desc' };
@@ -217,11 +213,6 @@
     { value: 25, title: '25' },
     { value: 50, title: '50' },
   ];
-
-  // ダイアログ状態
-  const isDeactivateDialogOpen = ref<boolean>(false);
-  const isReactivateDialogOpen = ref<boolean>(false);
-  const developerToModify = ref<Developer | null>(null);
 
   // スナックバー状態
   const showSnackbar = ref<boolean>(false);
@@ -360,6 +351,11 @@
     }
   };
 
+  // --- Actions ---
+  const goToEditPage = (developer: Developer): void => {
+    router.push(`/admin/developers/${developer.id}/edit`);
+  };
+
   // エラー表示用ヘルパー関数
   const showError = (message: string): void => {
     snackbarText.value = message;
@@ -374,52 +370,43 @@
     showSnackbar.value = true;
   };
 
-  // --- Actions ---
-  const goToEditPage = (developer: Developer): void => {
-    router.push(`/admin/developers/${developer.id}/edit`);
-  };
-  
-  const confirmDeactivateDeveloper = async (): Promise<void> => {
-    if (!developerToModify.value) return;
+  // 開発者停止処理
+  const handleDeactivateDeveloper = async (developer: Developer): Promise<void> => {
+    const confirmed = await showErrorModal(
+      `開発者「${developer.name}」を停止しますか？開発者はアプリの管理や新規公開ができなくなります。`,
+      '開発者停止確認'
+    );
+    
+    if (!confirmed) return;
     
     try {
-      // API呼び出し
-      await $api.patch(`/admin/developers/${developerToModify.value.id}/status`, {
+      await $api.patch(`/admin/developers/${developer.id}/status`, {
         status: UserStatus.SUSPENDED
       });
-      
-      // 成功メッセージ表示
-      showSuccess(`開発者「${developerToModify.value.name}」を停止しました`);
-      
-      // 一覧を再取得
+      showSuccess(`開発者「${developer.name}」を停止しました`);
       fetchDevelopers();
     } catch (error: any) {
       showError(error.response?.data?.message || '開発者の停止に失敗しました');
-    } finally {
-      isDeactivateDialogOpen.value = false;
-      developerToModify.value = null;
     }
   };
-  
-  const confirmReactivateDeveloper = async (): Promise<void> => {
-    if (!developerToModify.value) return;
+
+  // 開発者有効化処理
+  const handleReactivateDeveloper = async (developer: Developer): Promise<void> => {
+    const confirmed = await showWarningModal(
+      `開発者「${developer.name}」を再度有効化しますか？`,
+      '開発者有効化確認'
+    );
+    
+    if (!confirmed) return;
     
     try {
-      // API呼び出し
-      await $api.patch(`/admin/developers/${developerToModify.value.id}/status`, {
+      await $api.patch(`/admin/developers/${developer.id}/status`, {
         status: UserStatus.ACTIVE
       });
-      
-      // 成功メッセージ表示
-      showSuccess(`開発者「${developerToModify.value.name}」を有効化しました`);
-      
-      // 一覧を再取得
+      showSuccess(`開発者「${developer.name}」を有効化しました`);
       fetchDevelopers();
     } catch (error: any) {
       showError(error.response?.data?.message || '開発者の有効化に失敗しました');
-    } finally {
-      isReactivateDialogOpen.value = false;
-      developerToModify.value = null;
     }
   };
 

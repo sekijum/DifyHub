@@ -6,7 +6,6 @@ export interface PaymentInfo {
     planDisplayName: string;
     amount: number;
     nextBillingDate: string | null;
-    isFree: boolean;
   } | null;
   paymentHistory: PaymentHistoryEntry[];
 }

@@ -48,8 +48,8 @@ interface MappedAppData {
   name: string;
   description: string;
   imageUrl: string;
-  likes: number;
-  dislikes: number;
+  likeCount: number;
+  dislikeCount: number;
   usageCount: number;
   requiresSubscription: boolean;
   creatorId: number | null;
@@ -88,17 +88,17 @@ function mapAppForCard(app: AppDto): MappedAppData {
     name: app.name,
     description: app.description || '',
     imageUrl: app.thumbnailUrl || 'https://placehold.jp/300x300.png?text=No+Image',
-    likes: app.likeCount,
-    dislikes: app.dislikeCount,
+    likeCount: app.likesCount || 0,
+    dislikeCount: app.dislikesCount || 0,
     usageCount: app.usageCount,
     requiresSubscription: app.isSubscriptionLimited,
     creatorId: app.developerId || null,
     creatorName: app.developerName,
-    creatorAvatarUrl: null,
+    creatorAvatarUrl: app.developerAvatarUrl,
     category: {
       id: app.categoryId,
       name: app.categoryName
-    }
+    },
   };
 }
 </script> 

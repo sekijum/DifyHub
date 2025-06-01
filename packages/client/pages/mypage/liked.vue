@@ -70,9 +70,7 @@
           :is-bookmarked="false"
           @title-click="goToAppDetail(app.id)"
           @toggle-bookmark="handleToggleBookmark"
-          :creator-name="undefined"
-          :creator-avatar-url="undefined"
-          @creator-click="() => {}"
+          @creator-click="goToUserProfile"
           class="flex-grow-1"
         />
       </v-col>
@@ -124,8 +122,12 @@ interface ApiApp {
   usageCount: number;
   createdAt: string; // ISO Date String
   updatedAt: string; // ISO Date String
-  // Creator情報を追加
-  creator?: { id: number; name: string; avatarUrl: string | null; } | null;
+  // Creator情報を追加（直接プロパティとして）
+  creatorName: string;
+  creatorAvatarUrl: string | null;
+  // 評価情報を追加
+  likesCount: number;
+  dislikesCount: number;
 }
 
 // AppCard が期待する App 型 (AppCard.vue の定義に合わせる)
@@ -134,8 +136,8 @@ interface CardApp {
   name: string;
   description: string;
   imageUrl: string;
-  likes: number; // APIにないのでダミー値 (AppCardでは表示しない可能性あり)
-  dislikes?: number;
+  likeCount: number; // APIのlikesCountからマッピング
+  dislikeCount: number; // APIのdislikesCountからマッピング
   usageCount: number;
   requiresSubscription: boolean;
   category?: { id: number; name: string } | null;
@@ -256,13 +258,14 @@ const mapApiAppToCardApp = (apiApp: ApiApp): CardApp => ({
   name: apiApp.name,
   description: apiApp.description ?? '', // nullの場合は空文字
   imageUrl: apiApp.thumbnailUrl || '/img/placeholder.png', // nullの場合はプレースホルダー画像
-  likes: 0, // APIにないので0。AppCard側で表示有無を制御想定
+  likeCount: apiApp.likesCount || 0,
+  dislikeCount: apiApp.dislikesCount || 0,
   usageCount: apiApp.usageCount,
   requiresSubscription: apiApp.isSubscriptionLimited, // isSubscriptionLimited をマッピング
   category: apiApp.category, // ★ Add category mapping
-  creatorId: apiApp.creator?.id,
-  creatorName: apiApp.creator?.name,
-  creatorAvatarUrl: apiApp.creator?.avatarUrl ?? null, // null許容でマッピング
+  creatorId: apiApp.creatorId,
+  creatorName: apiApp.creatorName,
+  creatorAvatarUrl: apiApp.creatorAvatarUrl,
 });
 
 // --- Navigation --- 
@@ -279,8 +282,10 @@ const handleToggleBookmark = (appId: number) => {
   // fetchLikedApps(); 
 };
 
-// Creator click is handled in AppCard now if creatorId is passed
-// const goToUserProfile = (creatorId: number) => { ... };
+const goToUserProfile = (creatorId: number) => {
+  // Implement the logic to go to user profile
+  console.log(`Going to user profile with ID: ${creatorId}`);
+};
 
 </script>
 

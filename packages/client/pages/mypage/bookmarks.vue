@@ -295,41 +295,6 @@
        </v-card>
      </v-dialog>
 
-    <!-- Delete Confirmation Dialog -->
-    <v-dialog v-model="deleteDialogVisible" persistent max-width="400">
-       <v-card>
-         <v-card-title class="text-h5">
-           フォルダ削除の確認
-         </v-card-title>
-         <v-card-text>
-           フォルダ「<strong>{{ folderNameToDelete }}</strong>」を削除してもよろしいですか？
-           <br>
-           このフォルダ内のすべてのブックマークも削除されます。
-           <v-progress-linear v-if="deletingFolderLoading" indeterminate color="primary" class="mt-3"></v-progress-linear>
-         </v-card-text>
-         <v-card-actions>
-           <v-spacer></v-spacer>
-           <v-btn
-             color="grey darken-1"
-             text
-             @click="cancelDeleteFolder"
-             :disabled="deletingFolderLoading"
-           >
-             キャンセル
-           </v-btn>
-           <v-btn
-             color="error darken-1"
-             text
-             @click="confirmDeleteFolder"
-             :loading="deletingFolderLoading"
-             :disabled="deletingFolderLoading"
-           >
-             削除
-           </v-btn>
-         </v-card-actions>
-       </v-card>
-     </v-dialog>
-
     <!-- Snackbar -->
     <v-snackbar
       v-model="snackbarVisible"
@@ -357,6 +322,7 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useDisplay } from 'vuetify';
 import { useNuxtApp } from '#app';
+import { useGlobalModal } from '~/composables/useGlobalModal';
 import AppCard from '~/components/AppCard.vue';
 import PageTitle from '~/components/PageTitle.vue';
 
@@ -366,8 +332,8 @@ interface App {
   name: string;
   description: string;
   imageUrl: string;
-  likes: number;
-  dislikes?: number;
+  likeCount: number;
+  dislikeCount: number;
   usageCount: number;
   isBookmarked: boolean;
   requiresSubscription: boolean;
@@ -429,6 +395,7 @@ interface Bookmarks {
 const { $api } = useNuxtApp();
 const router = useRouter();
 const display = useDisplay();
+const { confirmDelete } = useGlobalModal();
 
 // --- Reactive State ---
 const bookmarksByDestination = ref<Bookmarks>({});
@@ -439,11 +406,6 @@ const error = ref<any>(null); // For initial load error
 const newFolderName = ref(''); // For folder creation form
 const creatingFolderLoading = ref(false);
 const creatingFolderError = ref<any>(null); // Keep for form validation feedback
-const deleteDialogVisible = ref(false); // For delete confirmation dialog
-const folderNameToDelete = ref<string | null>(null);
-const folderIdToDelete = ref<number | null>(null);
-const deletingFolderLoading = ref(false);
-// deletingFolderError is removed, use snackbar
 const snackbarVisible = ref(false);
 const snackbarMessage = ref('');
 const snackbarColor = ref('info'); // 'success', 'error', 'info', 'warning'
@@ -477,13 +439,17 @@ const loadAndGroupBookmarks = async () => {
     if (data) {
       const grouped: Bookmarks = {};
 
+      // バックエンドから返されたデータをそのままの順序で処理
       data.forEach((folder: ApiBookmarkFolder) => {
-        const appsInFolder: App[] = folder.bookmarks.map((bookmark: ApiBookmarkItem) => ({
+        // bookmarksが存在しない場合は空配列として扱う
+        const bookmarks = folder.bookmarks || [];
+        const appsInFolder: App[] = bookmarks.map((bookmark: ApiBookmarkItem) => ({
           id: bookmark.app.id,
           name: bookmark.app.name,
           description: bookmark.app.description || '',
           imageUrl: bookmark.app.imageUrl ?? 'https://placehold.jp/300x300.png?text=No+Image',
-          likes: 0,
+          likeCount: 0,
+          dislikeCount: 0,
           usageCount: bookmark.app.usageCount,
           isBookmarked: true,
           requiresSubscription: bookmark.app.isSubscriptionLimited,
@@ -534,14 +500,13 @@ const hasBookmarks = computed(() => {
   return !loading.value && !error.value && Object.keys(bookmarksByDestination.value).length > 0;
 });
 
-// Get folder list sorted potentially (e.g., default first, then alphabetically)
+// Get folder list sorted by server order (default first, then by bookmark count)
 const sortedFolderNames = computed(() => {
+    // サーバーから返された順序を保持（既にデフォルトフォルダー優先、ブックマーク数順になっている）
     return Object.keys(bookmarksByDestination.value).sort((a, b) => {
-        const folderA = bookmarksByDestination.value[a];
-        const folderB = bookmarksByDestination.value[b];
-        if (folderA.isDefault && !folderB.isDefault) return -1;
-        if (!folderA.isDefault && folderB.isDefault) return 1;
-        return a.localeCompare(b); // Alphabetical otherwise
+        const countA = bookmarksByDestination.value[a].apps.length;
+        const countB = bookmarksByDestination.value[b].apps.length;
+        return countB - countA;
     });
 });
 
@@ -677,7 +642,7 @@ const handleCreateFolder = async () => {
   }
 };
 
-const openDeleteConfirmation = (folderName: string) => {
+const openDeleteConfirmation = async (folderName: string) => {
   const folderData = bookmarksByDestination.value[folderName];
   if (!folderData) {
     console.error(`Cannot delete folder: Data not found for name "${folderName}"`);
@@ -691,55 +656,33 @@ const openDeleteConfirmation = (folderName: string) => {
       return;
   }
 
-  folderNameToDelete.value = folderName;
-  folderIdToDelete.value = folderData.id;
-  deleteDialogVisible.value = true;
+  // globalモーダルを使用して削除確認
+  const confirmed = await confirmDelete(folderName, 'フォルダ');
+  if (confirmed) {
+    await deleteFolder(folderData.id, folderName);
+  }
 };
 
-const cancelDeleteFolder = () => {
-  deleteDialogVisible.value = false;
-  folderNameToDelete.value = null;
-  folderIdToDelete.value = null;
-  deletingFolderLoading.value = false;
-  // deletingFolderError is handled by snackbar
-};
-
-const confirmDeleteFolder = async () => {
-  if (!folderIdToDelete.value || !folderNameToDelete.value) return;
-
-  deletingFolderLoading.value = true;
-
+const deleteFolder = async (folderId: number, folderName: string) => {
   try {
-    await $api.delete(`/me/bookmark-folders/${folderIdToDelete.value}`);
-
-    const deletedName = folderNameToDelete.value; // Store before resetting
-    const currentSelection = selectedDestination.value;
-
-    // Update local state before closing dialog
-    delete bookmarksByDestination.value[deletedName];
-
-    showSnackbar(`フォルダ「${deletedName}」を削除しました。`, 'success');
-    cancelDeleteFolder(); // Close dialog and reset state
-
-    // If the deleted folder was selected, reset selection
-    if (currentSelection === deletedName) {
-      const remainingFolders = sortedFolderNames.value; // Use computed for potentially better order
+    // API呼び出し: DELETE /me/bookmark-folders/{folderId}
+    await $api.delete(`/me/bookmark-folders/${folderId}`);
+    
+    // Update local state
+    delete bookmarksByDestination.value[folderName];
+    
+    showSnackbar(`フォルダ「${folderName}」を削除しました。`, 'success');
+    
+    // 選択中フォルダーのリセット処理
+    if (selectedDestination.value === folderName) {
+      const remainingFolders = sortedFolderNames.value;
       selectedDestination.value = remainingFolders.length > 0 ? remainingFolders[0] : null;
-      if (display.mobile.value && viewMode.value === 'apps') {
-         viewMode.value = 'list';
-      }
     }
-    console.log(`Folder "${deletedName}" (ID: ${folderIdToDelete.value}) deleted successfully.`);
-
+    
   } catch (err: any) {
-    console.error('Failed to delete bookmark folder:', err);
+    // エラーハンドリング
     const message = err?.response?.data?.message || 'フォルダの削除に失敗しました。';
     showSnackbar(message, 'error');
-    // Keep dialog open on error? Or close and just show snackbar? Let's close.
-    cancelDeleteFolder();
-  } finally {
-      // Loading is reset within cancelDeleteFolder
-      // deletingFolderLoading.value = false; // Already handled by cancelDeleteFolder
   }
 };
 

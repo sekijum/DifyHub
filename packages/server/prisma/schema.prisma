@@ -44,7 +44,6 @@ enum NotificationLevel {
 // プランステータス
 enum PlanStatus {
   ACTIVE    // 有効
-  PRIVATE   // 非公開
   SUSPENDED // 停止
 }
 
@@ -85,10 +84,12 @@ model User {
   avatarUrl            String?
   bio                  String?            // 自己紹介カラムを追加 (任意)
   role                 Role               @default(USER)
+  payjpCustomerId      String?            // PAY.JPの顧客ID
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   status               UserStatus         @default(ACTIVE) // status フィールド削除
   developerName        String?            @db.VarChar(100)      // 開発者としての表示名 (追加)
+  payjpTenantId        String?   @unique  // PAY.JP上のテナントID（例：tenant_xxxx）
 
   developerRequests    DeveloperRequest[]
   createdApps          App[]                 @relation("AppCreator")
@@ -219,15 +220,13 @@ model Bookmark {
 }
 
 model Plan {
-  name            String   @id // Reverted name to be the primary key
-  amount          Int
+  name            String   @id
   features        Json
-  status          PlanStatus @default(PRIVATE)
-  squareCatalogId    String    // Square連携用プランID
-  billingPeriod   String    @default("MONTHLY") // 課金周期 (MONTHLY, ANNUAL等)
-  isFree          Boolean   @default(false)    // 無料プランかどうか
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          PlanStatus @default(SUSPENDED)
+  payjpPlanId     String?   @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  isDefault       Boolean  @default(false)
 
   subscriptions   Subscription[]
 }
@@ -238,8 +237,7 @@ model Subscription {
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   planName             String             // Plan.name へのFK
   plan                 Plan               @relation(fields: [planName], references: [name])
-  squareCustomerId     String            // Square 顧客ID
-  squareSubscriptionId String?            // Square サブスクリプションID
+  payjpSubscriptionId  String?            // PAY.JPのサブスクリプションID
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 

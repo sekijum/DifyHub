@@ -120,7 +120,7 @@
                       size="small"
                       variant="text"
                       color="error"
-                      @click="openDeleteDialog(item)"
+                      @click="handleDeleteAdmin(item)"
                       :disabled="item.id === currentUserId"
                     >
                       <v-icon>mdi-delete</v-icon>
@@ -136,16 +136,6 @@
             </template>
           </v-data-table-server>
         </v-card>
-  
-      <!-- Delete Confirmation Dialog -->
-       <ConfirmationDialog
-        v-model="isDeleteDialogOpen"
-        title="管理者削除確認"
-        :message="`管理者「${adminToDelete?.name}」を完全に削除しますか？この操作は元に戻せません。`"
-        confirm-text="削除する"
-        confirm-color="error"
-        @confirm="confirmDeleteAdmin"
-      />
   
       <!-- エラー通知用スナックバー -->
       <v-snackbar
@@ -172,9 +162,9 @@
   import { useRouter, useRoute } from 'vue-router';
   import type { VDataTableServer } from 'vuetify/components';
   import PageTitle from '~/components/PageTitle.vue';
-  import ConfirmationDialog from '~/components/ConfirmationDialog.vue';
   import { UserStatus } from '~/constants/user-status';
   import type { UserStatusType } from '~/constants/user-status';
+  import { useGlobalModal } from '~/composables/useGlobalModal';
   
   definePageMeta({
     layout: 'admin',
@@ -183,6 +173,7 @@
   const router = useRouter();
   const route = useRoute();
   const { $api, payload } = useNuxtApp();
+  const { confirmDelete } = useGlobalModal();
   
   // --- Types and Interfaces ---
   type SortItem = { key: string; order: 'asc' | 'desc' };
@@ -224,10 +215,6 @@
     { value: 25, title: '25' },
     { value: 50, title: '50' },
   ];
-  
-  // ダイアログ状態
-  const isDeleteDialogOpen = ref<boolean>(false);
-  const adminToDelete = ref<Administrator | null>(null);
   
   // スナックバー状態
   const showSnackbar = ref<boolean>(false);
@@ -385,28 +372,17 @@
   };
   
   // --- Delete Actions ---
-  const openDeleteDialog = (admin: Administrator): void => {
-    adminToDelete.value = admin;
-    isDeleteDialogOpen.value = true;
-  };
-  
-  const confirmDeleteAdmin = async (): Promise<void> => {
-    if (!adminToDelete.value) return;
+  const handleDeleteAdmin = async (admin: Administrator): Promise<void> => {
+    const confirmed = await confirmDelete(admin.name, '管理者');
+    
+    if (!confirmed) return;
     
     try {
-      // API呼び出し
-      await $api.delete(`/admin/administrators/${adminToDelete.value.id}`);
-      
-      // 成功メッセージ表示
-      showSuccess(`管理者「${adminToDelete.value.name}」を削除しました`);
-      
-      // 一覧を再取得
+      await $api.delete(`/admin/administrators/${admin.id}`);
+      showSuccess(`管理者「${admin.name}」を削除しました`);
       fetchAdministrators();
     } catch (error: any) {
       showError(error.response?.data?.message || '管理者の削除に失敗しました');
-    } finally {
-      isDeleteDialogOpen.value = false;
-      adminToDelete.value = null;
     }
   };
   

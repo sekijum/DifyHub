@@ -5,8 +5,8 @@ import { App, User, Category } from "@prisma/client";
 type AppWithIncludedDataAndCounts = App & {
   creator?: Pick<User, "id" | "name" | "avatarUrl"> | null;
   category?: Pick<Category, "id" | "name"> | null;
-  likesCount?: number;
-  dislikesCount?: number;
+  likeCount?: number;
+  dislikeCount?: number;
 };
 
 export class AppDto {
@@ -24,6 +24,9 @@ export class AppDto {
   creatorAvatarUrl?: string | null;
   likesCount: number;
   dislikesCount: number;
+  developerId?: number;
+  developerName?: string;
+  developerAvatarUrl?: string | null;
 
   // Prisma モデル (creator情報を含む) からマッピングするコンストラクタ
   constructor(partial: Partial<AppWithIncludedDataAndCounts>) {
@@ -41,8 +44,11 @@ export class AppDto {
     this.creatorId = partial.creator?.id;
     this.creatorName = partial.creator?.name;
     this.creatorAvatarUrl = partial.creator?.avatarUrl;
-    this.likesCount = partial.likesCount ?? 0;
-    this.dislikesCount = partial.dislikesCount ?? 0;
+    this.likesCount = partial.likeCount ?? 0;
+    this.dislikesCount = partial.dislikeCount ?? 0;
+    this.developerId = partial.creator?.id;
+    this.developerName = partial.creator?.name;
+    this.developerAvatarUrl = partial.creator?.avatarUrl;
   }
 
   // 静的ファクトリメソッド (型安全性を高める)

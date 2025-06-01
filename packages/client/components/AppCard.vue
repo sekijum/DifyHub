@@ -1,12 +1,11 @@
 <template>
   <v-card class="d-flex flex-column fill-height">
     <div style="position: relative;" class="flex-grow-0">
-      <!-- Rating Bar (Using positiveRatingRate) -->
       <v-progress-linear
         v-if="positiveRatingRate !== null" 
-        :model-value="positiveRatingRate * 100" 
+        :model-value="positiveRatingRate" 
         :max="100" 
-        color="blue" 
+        color="green" 
         height="3"
         rounded
         bg-color="red-darken-2" 
@@ -84,14 +83,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { PropType } from 'vue';
+import { calculatePositiveRatingRate } from '~/utils/rating';
 
 interface App {
   id: number;
   name: string;
   description: string;
   imageUrl: string;
-  likes: number;
-  dislikes?: number;
+  likeCount: number;
+  dislikeCount: number;
   usageCount: number;
   requiresSubscription: boolean;
   creatorId?: number | null;
@@ -127,22 +127,16 @@ const truncatedDescription = computed(() => {
   return desc;
 });
 
-// ★ Add computed property for positive rating rate
+// 評価率計算（utilを使用）
 const positiveRatingRate = computed<number | null>(() => {
-  const likes = props.app.likes;
-  const dislikes = props.app.dislikes ?? 0; // Default dislikes to 0 if undefined
+  const likeCount = props.app.likeCount;
+  const dislikeCount = props.app.dislikeCount;
 
-  // Ensure both are valid numbers
-  if (typeof likes !== 'number' || typeof dislikes !== 'number') {
-    return null; // Cannot calculate if values are not numbers
+  if (likeCount + dislikeCount === 0) {
+    return null;
   }
 
-  const total = likes + dislikes;
-  if (total === 0) {
-    return null; // Avoid division by zero and show nothing if no ratings
-  }
-  
-  return likes / total; // Returns value between 0 and 1
+  return calculatePositiveRatingRate(likeCount, dislikeCount);
 });
 
 </script>

@@ -8,8 +8,7 @@ import {
 import { prisma } from "@/core/database/prisma.client";
 import { Plan, Prisma } from "@prisma/client";
 import { CreatePlanDto, UpdatePlanDto } from "./dto";
-import { randomUUID } from "crypto";
-import { square } from "@/core/square/square.client";
+import { payjp } from "@/core/payjp";
 import { logger } from "@/core/utils";
 
 @Injectable()
@@ -18,44 +17,99 @@ export class AdminPlansService {
    * プラン一覧を取得
    */
   async findPlanList() {
-    const data = await prisma.plan.findMany({
-      orderBy: { createdAt: "asc" },
-    });
+    try {
+      // DBからプラン一覧を取得
+      const dbPlanList = await prisma.plan.findMany({
+        orderBy: { createdAt: "asc" },
+      });
 
-    // クライアント側が期待する形式に変換
-    const planList = data.map((plan) => {
-      return {
-        ...plan,
-        features: {
-          additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
-        },
-      };
-    });
+      // PAY.JPから最新のプラン情報を取得
+      const payjpPlansResponse = await payjp.plans.list();
+      const payjpPlans = payjpPlansResponse.data || [];
 
-    return planList;
+      // payjpPlanIdをキーにしたマップを作成
+      const payjpPlansMap = new Map();
+      payjpPlans.forEach(payjpPlan => {
+        payjpPlansMap.set(payjpPlan.id, payjpPlan);
+      });
+
+      // DBのプラン情報とPAY.JPのプラン情報をマージ
+      const planList = dbPlanList.map(plan => {
+        const payjpPlan = payjpPlansMap.get(plan.payjpPlanId);
+        
+        // isDefaultプロパティを削除した新しいオブジェクトを作成
+        const { isDefault, ...planWithoutIsDefault } = plan;
+        
+        return {
+          ...planWithoutIsDefault,
+          amount: payjpPlan?.amount || 0,
+          interval: payjpPlan?.interval || "month",
+          features: {
+            additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
+          },
+        };
+      });
+
+      return planList;
+    } catch (error) {
+      logger.error(`PAY.JP APIエラー: ${JSON.stringify(error)}`);
+      
+      // エラーが発生した場合はDBの情報のみを返却
+      const dbPlans = await prisma.plan.findMany({
+        orderBy: { createdAt: "asc" },
+      });
+      
+      return dbPlans.map((plan) => {
+        // isDefaultプロパティを削除
+        const { isDefault, ...planWithoutIsDefault } = plan;
+        
+        return {
+          ...planWithoutIsDefault,
+          features: {
+            additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
+          },
+        };
+      });
+    }
   }
 
   /**
    * プラン詳細を取得
    */
-  async findPlanById(name: string) {
+  async findPlanByName(name: string) {
+    // DBからプラン情報を取得
     const plan = await prisma.plan.findUniqueOrThrow({
       where: { name },
     });
 
-    return {
-      ...plan,
-      features: {
-        additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
-      },
-    };
-  }
+    // isDefaultプロパティを除外
+    const { isDefault, ...planWithoutIsDefault } = plan;
 
-  /**
-   * Square用の一時IDを生成
-   */
-  private generateSquareTempId(name: string): string {
-    return `#${name.replace(/\s+/g, "_")}_${Date.now()}`;
+    try {
+      // PAY.JPから最新のプラン情報を取得
+      const payjpPlan = await payjp.plans.retrieve(plan.payjpPlanId);
+      
+      return {
+        ...planWithoutIsDefault,
+        amount: payjpPlan?.amount || 0,
+        interval: payjpPlan?.interval || "month",
+        features: {
+          additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
+        },
+      };
+    } catch (error) {
+      logger.error(`PAY.JP APIエラー: ${JSON.stringify(error)}`);
+      
+      // エラーが発生した場合はDBの情報のみを返却
+      return {
+        ...planWithoutIsDefault,
+        amount: 0, // デフォルト値を設定
+        interval: "month", // デフォルト値を設定
+        features: {
+          additionalFeatures: Array.isArray(plan.features) ? plan.features : [],
+        },
+      };
+    }
   }
 
   /**
@@ -70,48 +124,34 @@ export class AdminPlansService {
       throw new ConflictException("プラン名が既に存在します。");
     }
 
-    // Square APIの要件に合わせてIDを#で始まる一時IDに変更
-    const tempSquareId = this.generateSquareTempId(dto.name);
-    const squareCurrency = process.env.SQUARE_CURRENCY || "JPY";
-
     try {
-      const response = await square.catalog.object.upsert({
-        idempotencyKey: randomUUID(),
-        object: {
-          type: "SUBSCRIPTION_PLAN",
-          id: tempSquareId,
-          subscriptionPlanData: {
-            name: dto.name,
-            phases: [
-              {
-                cadence: dto.billingPeriod || ("MONTHLY" as any),
-                recurringPriceMoney: {
-                  amount: BigInt(dto.amount),
-                  currency: squareCurrency as any,
-                },
-              },
-            ],
-          },
-        },
-      });
-
-      const squareCatalogId = response.catalogObject.id;
+      const payjpPlan = await payjp.plans.create({
+        currency: 'jpy',
+        amount: dto.amount,
+        interval: dto.billingPeriod,
+        name: dto.name,
+      })
 
       // DBにプランを作成
       const plan = await prisma.plan.create({
         data: {
           name: dto.name,
-          amount: dto.amount,
-          squareCatalogId: squareCatalogId,
+          payjpPlanId: payjpPlan.id,
           features: dto.features || [],
           status: dto.status,
-          billingPeriod: "MONTHLY",
         },
       });
 
-      return plan;
+      // isDefaultプロパティを除外
+      const { isDefault, ...planWithoutIsDefault } = plan;
+
+      return {
+        ...planWithoutIsDefault,
+        amount: payjpPlan.amount,
+        interval: payjpPlan.interval,
+      };
     } catch (error) {
-      logger.error(`Square APIエラー: ${JSON.stringify(error)}`);
+      logger.error(`PayJP APIエラー: ${JSON.stringify(error)}`);
       throw new InternalServerErrorException("プランの作成に失敗しました");
     }
   }
@@ -125,12 +165,6 @@ export class AdminPlansService {
       where: { name },
     });
 
-    // Square IDが存在することを確認
-    if (!existingPlan.squareCatalogId) {
-      logger.error(`プラン「${name}」のSquare IDが存在しません`);
-      throw new InternalServerErrorException("Square IDが見つかりません");
-    }
-
     // 更新データの準備
     const updateData: Prisma.PlanUpdateInput = {
       ...dto,
@@ -138,28 +172,9 @@ export class AdminPlansService {
     };
 
     try {
-      // Square情報を更新
-      await square.catalog.object.upsert({
-        idempotencyKey: randomUUID(),
-        object: {
-          type: "SUBSCRIPTION_PLAN",
-          id: existingPlan.squareCatalogId,
-          subscriptionPlanData: {
-            name: dto.name || existingPlan.name,
-            phases: [
-              {
-                cadence:
-                  dto.billingPeriod ||
-                  existingPlan.billingPeriod ||
-                  ("MONTHLY" as any),
-                recurringPriceMoney: {
-                  amount: BigInt(dto.amount || existingPlan.amount),
-                  currency: (process.env.SQUARE_CURRENCY || "JPY") as any,
-                },
-              },
-            ],
-          },
-        },
+      // PAY.JPのプラン更新（名前のみ）
+      await payjp.plans.update(existingPlan.payjpPlanId, {
+        name: dto.name,
       });
 
       // DBプランを更新
@@ -168,11 +183,21 @@ export class AdminPlansService {
         data: updateData,
       });
 
-      return updatedPlan;
+      // PAY.JPからプラン情報取得（料金・課金間隔などを含む最新情報）
+      const payjpPlan = await payjp.plans.retrieve(updatedPlan.payjpPlanId);
+
+      // isDefaultプロパティを除外
+      const { isDefault, ...planWithoutIsDefault } = updatedPlan;
+
+      return {
+        ...planWithoutIsDefault,
+        amount: payjpPlan?.amount || 0,
+        interval: payjpPlan?.interval || "month",
+      };
     } catch (error) {
-      logger.error(`Square APIエラー: ${JSON.stringify(error)}`);
+      logger.error(`PayJP APIエラー: ${JSON.stringify(error)}`);
       throw new InternalServerErrorException(
-        "プランのSquare情報の更新に失敗しました",
+        "プランのPayJP情報の更新に失敗しました",
       );
     }
   }
@@ -198,15 +223,10 @@ export class AdminPlansService {
     }
 
     try {
-      // Square情報を削除
-      await square.catalog.object.delete({
-        objectId: existingPlan.squareCatalogId,
-      });
+      await payjp.plans.delete(existingPlan.payjpPlanId);
 
       // DBから削除
-      await prisma.plan.delete({
-        where: { name },
-      });
+      await prisma.plan.delete({ where: { name } });
     } catch (error) {
       logger.error(`プラン削除エラー: ${JSON.stringify(error)}`);
       throw new InternalServerErrorException("プランの削除に失敗しました");

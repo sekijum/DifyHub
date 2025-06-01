@@ -24,8 +24,10 @@
     <DeveloperHeader @toggle-drawer="toggleDrawer" />
 
     <!-- Main Content -->
-
     <v-main><NuxtPage /></v-main>
+
+    <!-- Global Modal -->
+    <GlobalModal />
 
     <!-- Footer or other layout elements -->
     <!-- <MenuModal /> -->
@@ -38,6 +40,7 @@ import { useHead } from '#app'; // Correct import for useHead
 import { useDisplay } from 'vuetify'; // Import useDisplay
 import DeveloperHeader from '~/components/DeveloperHeader.vue'; // Import AdminHeader instead of Header
 import DeveloperSidebar from '~/components/DeveloperSidebar.vue';
+import GlobalModal from '~/components/GlobalModal.vue';
 // Removed: import { useNuxtApp } from '#app'
 
 // Set the page title for admin layout

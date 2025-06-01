@@ -3,10 +3,6 @@
     <!-- User Info Section -->
     <template v-if="payload.isLoggedIn && payload.user">
       <v-list-item :title="payload.user.email">
-        <template v-slot:subtitle>
-          <v-chip color="blue" size="small" class="mr-1 my-1" variant="flat">{{ userRoleDisplay }}</v-chip>
-          <v-chip color="green" size="small" class="my-1" variant="flat">{{ userPlanDisplay }}</v-chip>
-        </template>
       </v-list-item>
     </template>
     <template v-else>
@@ -111,24 +107,21 @@ const { payload } = useNuxtApp(); // payload を取得
 
 // --- Computed Properties for Display --- 
 const userRoleDisplay = computed(() => {
+  // ユーザーがない、またはroleがない場合は空文字を返す
   if (!payload.user) return '';
-  switch (payload.user.role) {
-    case 'ADMINISTRATOR': return '管理者';
-    case 'DEVELOPER': return '開発者';
-    case 'USER': return 'ユーザー';
-    default: return payload.user.role; // Unknown role
+  if (!payload.user.role) return '';
+  
+  try {
+    switch (payload.user.role) {
+      case 'ADMINISTRATOR': return '管理者';
+      case 'DEVELOPER': return '開発者';
+      case 'USER': return 'ユーザー';
+      default: return payload.user.role; // Unknown role
+    }
+  } catch (error) {
+    console.error('Error in userRoleDisplay:', error);
+    return payload.user.role || ''; // Fallback
   }
-});
-
-const userPlanDisplay = computed(() => {
-  if (!payload.user) return '';
-  // プラン名に応じて表示を調整 (例: 'pro' -> 'Pro')
-  // 必要に応じて他のプラン名も追加
-  const plan = payload.user.planName.toLowerCase();
-  if (plan === 'free') return 'Free';
-  if (plan === 'pro') return 'Pro';
-  if (plan === 'premium') return 'Premium';
-  return payload.user.planName; // Capitalize or return as is
 });
 
 // --- Props and Emits for v-list open state ---
@@ -148,13 +141,8 @@ const handleSignOut = async () => {
     // Remove the access token from storage
     $storage.removeItem('access_token');
     
-    // Optionally, show a success message (can be removed if redirection is enough)
-    // alert('サインアウトしました。'); 
-
     // Redirect to the home page after sign out
     await navigateTo('/');
-    // You might want to force a reload to ensure state is fully cleared
-    // window.location.reload(); 
   } catch (error) {
     console.error('Error during sign out:', error);
     alert('サインアウト中にエラーが発生しました。');

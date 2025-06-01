@@ -7,28 +7,6 @@
       <v-progress-circular indeterminate color="primary"></v-progress-circular>
     </v-row>
 
-    <!-- Error/Success Messages -->
-    <v-alert
-      v-if="errorMessage"
-      type="error"
-      variant="tonal"
-      closable
-      class="mb-4"
-      @update:modelValue="errorMessage = null"
-    >
-      {{ errorMessage }}
-    </v-alert>
-    <v-alert
-      v-if="successMessage"
-      type="success"
-      variant="tonal"
-      closable
-      class="mb-4"
-      @update:modelValue="successMessage = null"
-    >
-      {{ successMessage }}
-    </v-alert>
-
     <v-row v-if="!isLoading">
       <v-col cols="12">
         <!-- Profile Card -->
@@ -45,8 +23,8 @@
                 color="primary"
                 style="position: absolute; bottom: 0; right: 0;"
                 @click="triggerFileInput"
-                title="アバターを変更 (プレビューのみ)"
-                :disabled="true"
+                title="アバターを変更"
+                :disabled="isSavingAvatar"
               >
                 <v-icon>mdi-camera</v-icon>
               </v-btn>
@@ -59,10 +37,30 @@
                 @change="onFileChange"
                 style="display: none;"
              />
-             <!-- Save Button for Avatar (Removed/Disabled) -->
-              <v-alert type="info" density="compact" variant="tonal" class="mt-2" v-if="selectedAvatarFile">
-                  アバター保存機能は現在利用できません。
-              </v-alert>
+             <!-- Save Button for Avatar -->
+             <div v-if="selectedAvatarFile" class="text-center mt-2">
+               <v-btn
+                 color="primary"
+                 variant="outlined"
+                 size="small"
+                 @click="saveAvatar"
+                 :loading="isSavingAvatar"
+                 :disabled="!selectedAvatarFile"
+                 prepend-icon="mdi-upload"
+               >
+                 アバターを保存
+               </v-btn>
+               <v-btn
+                 color="grey"
+                 variant="text"
+                 size="small"
+                 @click="selectedAvatarFile = null; avatarPreviewUrl = null"
+                 :disabled="isSavingAvatar"
+                 class="ml-2"
+               >
+                 キャンセル
+               </v-btn>
+             </div>
           </v-card-text>
 
           <v-divider></v-divider>
@@ -132,28 +130,6 @@
               <v-list-item-subtitle>{{ userEmail }}</v-list-item-subtitle>
             </v-list-item>
 
-            
-            <v-divider inset></v-divider>
-            <!-- Plan Section -->
-            <!-- ADMINISTRATOR 以外の場合のみ表示 -->
-            <v-list-item v-if="user && user.role !== 'ADMINISTRATOR'">
-              <template v-slot:prepend>
-                <v-icon icon="mdi-credit-card-outline"></v-icon>
-              </template>
-              <v-list-item-title>現在のプラン</v-list-item-title>
-              <v-list-item-subtitle>{{ currentPlan }}</v-list-item-subtitle>
-              <template v-slot:append>
-                <v-btn
-                  color="primary"
-                  variant="outlined"
-                  size="small"
-                  to="/plans"
-                >
-                  プラン変更
-                </v-btn>
-              </template>
-            </v-list-item>
-
           </v-list>
         </v-card>
 
@@ -162,16 +138,6 @@
           <v-card-title class="text-h6">パスワード変更</v-card-title>
           <v-card-text>
             <v-form ref="passwordForm" @submit.prevent="changePassword">
-              <v-text-field
-                v-model="currentPassword"
-                label="現在のパスワード"
-                type="password"
-                variant="outlined"
-                density="compact"
-                class="mb-3"
-                :rules="[rules.required]"
-                autocomplete="current-password"
-              ></v-text-field>
               <v-text-field
                 v-model="newPassword"
                 label="新しいパスワード"
@@ -194,6 +160,83 @@
               ></v-text-field>
               <v-btn type="submit" color="primary" block>パスワードを変更</v-btn>
             </v-form>
+          </v-card-text>
+        </v-card>
+
+        <!-- Plan and Billing Card -->
+        <v-card variant="outlined" class="mb-6">
+          <v-card-title class="text-h6">プラン・請求情報</v-card-title>
+          <v-card-text>
+            <!-- Current Plan -->
+            <div class="plan-section">
+              <div class="plan-info-row">
+                <div class="plan-current">
+                  <span class="plan-label">現在のプラン</span>
+                  <v-chip
+                    :color="currentPlan === 'Free' ? 'default' : 'grey'"
+                    variant="outlined"
+                    size="default"
+                    class="plan-chip"
+                  >
+                    {{ currentPlan }}
+                  </v-chip>
+                </div>
+                <div class="plan-actions">
+                  <v-btn
+                    v-if="currentPlan === 'Free'"
+                    color="primary"
+                    variant="outlined"
+                    size="small"
+                    to="/plans"
+                    class="mr-2"
+                  >
+                    アップグレード
+                  </v-btn>
+                  <v-btn
+                    color="primary"
+                    variant="text"
+                    size="small"
+                    to="/plans"
+                  >
+                    プラン変更
+                  </v-btn>
+                </div>
+              </div>
+            </div>
+
+            <v-divider class="my-6"></v-divider>
+
+            <!-- Billing History -->
+            <div class="billing-section">
+              <h3 class="billing-title">請求履歴</h3>
+              
+              <!-- Loading State -->
+              <div v-if="billingHistoryLoading" class="text-center py-8">
+                <v-progress-circular indeterminate size="32"></v-progress-circular>
+              </div>
+
+              <!-- No Billing History -->
+              <div v-else-if="!billingHistoryLoading && billingHistory.length === 0" class="empty-state">
+                <v-icon size="48" color="grey-lighten-2" class="mb-3">mdi-receipt-text-off-outline</v-icon>
+                <p class="text-body-2 text-grey-darken-1">請求履歴がありません</p>
+              </div>
+
+              <!-- Billing History List -->
+              <div v-else>
+                <v-data-table-virtual
+                  :headers="billingHeaders"
+                  :items="billingHistory"
+                  :loading="billingHistoryLoading"
+                  item-value="id"
+                  no-data-text="請求履歴がありません"
+                  loading-text="読み込み中..."
+                  class="billing-data-table"
+                  density="comfortable"
+                  height="300"
+                  fixed-header
+                ></v-data-table-virtual>
+              </div>
+            </div>
           </v-card-text>
         </v-card>
 
@@ -275,6 +318,8 @@
 import { ref, onMounted, computed } from 'vue';
 import { useNuxtApp } from '#app';
 import PageTitle from '~/components/PageTitle.vue';
+import { useSupabaseStorage } from '~/composables/useSupabaseStorage';
+import { useGlobalModal } from '~/composables/useGlobalModal';
 // import type を使用し、エラー無視コメントを削除
 import type { MyProfile } from '~/types/user';
 
@@ -283,10 +328,14 @@ definePageMeta({ middleware: ['logged-in-access-only'] });
 // --- API Client Setup ---
 const { $api, payload: { user } } = useNuxtApp();
 
+// --- Supabase Storage Setup ---
+const { uploadFile, validateFile, createFilePreviewUrl, extractFilePathFromUrl, deleteFile } = useSupabaseStorage();
+
+// --- Global Modal Setup ---
+const { showSuccessSnackbar, showErrorSnackbar } = useGlobalModal();
+
 // --- Reactive State ---
 const isLoading = ref(true);
-const errorMessage = ref<string | null>(null);
-const successMessage = ref<string | null>(null);
 
 // User information
 const userEmail = ref('');
@@ -308,16 +357,25 @@ const isEditingName = ref(false);
 const editedName = ref('');
 
 // Password change related
-const currentPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
 const passwordForm = ref<any>(null);
 
+// Billing related
+const billingHistory = ref<any[]>([]);
+const billingHistoryLoading = ref(false);
+
+// Data table headers for billing history
+const billingHeaders = [
+  { title: '支払日', key: 'formattedDate', sortable: true },
+  { title: '支払いID', key: 'id', sortable: false },
+  { title: 'ステータス', key: 'statusText', sortable: false },
+  { title: '金額', key: 'formattedAmount', sortable: true, align: 'end' as const },
+];
+
 // --- Fetch User Data ---
 onMounted(async () => {
   isLoading.value = true;
-  errorMessage.value = null;
-  successMessage.value = null;
   try {
     userName.value = user.name;
     userEmail.value = user.email;
@@ -325,8 +383,9 @@ onMounted(async () => {
     currentPlan.value = user.planName; // Use the plan name from API
     userRole.value = user.role;
     developerStatus.value = user.developerStatus;
+    await loadBillingHistory();
   } catch (error: any) {
-    errorMessage.value = 'Failed to load user profile.';
+    showErrorSnackbar('プロフィールの読み込みに失敗しました');
     // Add additional handling for 401 Unauthorized etc.
   } finally {
     isLoading.value = false;
@@ -340,24 +399,78 @@ const triggerFileInput = () => {
   fileInput.value?.click();
 };
 
-const onFileChange = (event: Event) => {
+const onFileChange = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
 
   if (file) {
+    // ファイル検証
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      showErrorSnackbar(validation.error || 'ファイルが無効です');
+      return;
+    }
+
     selectedAvatarFile.value = file; // Store the file
-    // Generate and show preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      avatarPreviewUrl.value = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-    console.log('Selected file (preview only):', file);
-     // Avatar save functionality is deferred, so selected file and preview are kept but save button is disabled
-     // saveAvatar() is not called
+    
+    try {
+      // プレビューを生成
+      avatarPreviewUrl.value = await createFilePreviewUrl(file);
+      console.log('Selected file for preview:', file);
+    } catch (error) {
+      console.error('Error creating preview:', error);
+      showErrorSnackbar('プレビューの生成に失敗しました');
+    }
   } else {
-      selectedAvatarFile.value = null;
-      avatarPreviewUrl.value = null; // Clear preview if selection cancelled
+    selectedAvatarFile.value = null;
+    avatarPreviewUrl.value = null; // Clear preview if selection cancelled
+  }
+};
+
+// アバター保存機能
+const saveAvatar = async () => {
+  if (!selectedAvatarFile.value) return;
+  
+  isSavingAvatar.value = true;
+  
+  // 削除用に現在のアバターURLを保存
+  const oldAvatarUrl = userAvatarUrl.value;
+  
+  try {
+    // Supabase Storageにアップロード
+    const uploadedUrl = await uploadFile(selectedAvatarFile.value);
+    
+    // サーバーのユーザー情報を更新
+    await $api('/me/avatar', {
+      method: 'PUT',
+      data: { avatarUrl: uploadedUrl }
+    });
+    
+    // 状態を更新
+    userAvatarUrl.value = uploadedUrl;
+    avatarPreviewUrl.value = null;
+    selectedAvatarFile.value = null;
+    
+    // 古い画像ファイルを削除（エラーが発生しても処理は続行）
+    if (oldAvatarUrl) {
+      try {
+        const oldFilePath = extractFilePathFromUrl(oldAvatarUrl);
+        if (oldFilePath) {
+          await deleteFile(oldFilePath);
+          console.log('古いアバター画像を削除しました:', oldFilePath);
+        }
+      } catch (deleteError) {
+        console.warn('古いアバター画像の削除に失敗しました:', deleteError);
+        // 削除エラーは表示しない（ユーザー体験を損なわないため）
+      }
+    }
+    
+    showSuccessSnackbar('アバターが正常に更新されました');
+  } catch (error: any) {
+    console.error('Failed to save avatar:', error);
+    showErrorSnackbar(error.message || 'アバターの保存に失敗しました');
+  } finally {
+    isSavingAvatar.value = false;
   }
 };
 
@@ -365,14 +478,10 @@ const onFileChange = (event: Event) => {
 const startEditName = () => {
   editedName.value = userName.value;
   isEditingName.value = true;
-  successMessage.value = null; // Clear message
-  errorMessage.value = null;
 };
 
 const saveName = async () => {
   if (!editedName.value) return;
-  errorMessage.value = null;
-  successMessage.value = null;
   try {
     const updatedUser: Pick<MyProfile, 'name'> = await $api('/me/name', {
       method: 'PATCH',
@@ -380,17 +489,16 @@ const saveName = async () => {
     });
     userName.value = updatedUser.name;
     isEditingName.value = false;
-    successMessage.value = 'Name updated successfully.';
+    showSuccessSnackbar('名前が正常に更新されました');
   } catch (error: any) {
     console.error('Failed to update name:', error);
-    errorMessage.value = 'Failed to update name.';
+    showErrorSnackbar('名前の更新に失敗しました');
     // Add more specific error handling based on the error response
   }
 };
 
 const cancelEditName = () => {
   isEditingName.value = false;
-  errorMessage.value = null;
 };
 
 // Password change related
@@ -399,35 +507,96 @@ const changePassword = async () => {
   const { valid } = await passwordForm.value.validate();
 
   if (valid) {
-    errorMessage.value = null;
-    successMessage.value = null;
     try {
       await $api('/me/password', {
         method: 'PATCH',
         data: {
-          currentPassword: currentPassword.value,
           newPassword: newPassword.value,
         },
       });
-      currentPassword.value = '';
       newPassword.value = '';
       confirmPassword.value = '';
       passwordForm.value.reset(); // Vuetify form reset
       passwordForm.value.resetValidation();
-      successMessage.value = 'Password changed successfully.';
+      showSuccessSnackbar('パスワードが正常に変更されました');
     } catch (error: any) {
       console.error('Failed to change password:', error);
-      if (error.response?.status === 401) {
-        errorMessage.value = 'Current password is incorrect.';
-      } else if (error.response?.status === 400) {
-        errorMessage.value = error.response._data?.message || 'Please check your input.'; // Attempt to show server message
+      if (error.response?.status === 400) {
+        showErrorSnackbar(error.response._data?.message || '入力内容を確認してください');
       } else {
-        errorMessage.value = 'Failed to change password.';
+        showErrorSnackbar('パスワードの変更に失敗しました');
       }
     }
   } else {
     console.log('Password form validation failed');
-    errorMessage.value = 'Please check your input.';
+    showErrorSnackbar('入力内容を確認してください');
+  }
+};
+
+// Billing related
+const loadBillingHistory = async () => {
+  billingHistoryLoading.value = true;
+  try {
+    const response = await $api('/me/billing-history');
+    
+    // データを v-data-table-virtual 用にフォーマット
+    billingHistory.value = response.data.map((item: any) => ({
+      ...item,
+      formattedDate: formatDate(item.createdAt),
+      statusText: getBillingStatusText(item.status),
+      formattedAmount: `¥${item.amount.toLocaleString()}`,
+    }));
+  } catch (error: any) {
+    console.error('Failed to load billing history:', error);
+    showErrorSnackbar('請求履歴の読み込みに失敗しました');
+  } finally {
+    billingHistoryLoading.value = false;
+  }
+};
+
+// Utility functions
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
+};
+
+const getBillingStatusColor = (status: string) => {
+  switch (status) {
+    case 'paid':
+      return 'success';
+    case 'refunded':
+    case 'partial_refunded':
+      return 'warning';
+    case 'failed':
+      return 'error';
+    case 'authorized':
+      return 'info';
+    case 'pending':
+      return 'grey';
+    default:
+      return 'grey';
+  }
+};
+
+const getBillingStatusText = (status: string) => {
+  switch (status) {
+    case 'paid':
+      return '支払済み';
+    case 'refunded':
+      return '返金済み';
+    case 'partial_refunded':
+      return '一部返金済み';
+    case 'failed':
+      return '支払失敗';
+    case 'authorized':
+      return '承認済み';
+    case 'pending':
+      return '処理中';
+    default:
+      return '不明';
   }
 };
 
@@ -441,5 +610,157 @@ const rules = {
 </script>
 
 <style scoped>
-/* Add specific styles if needed */
+/* Style overrides for Vuetify components if necessary */
+.avatar-container {
+  transition: transform 0.2s ease;
+}
+.avatar-container:hover {
+  transform: scale(1.05);
+}
+
+/* Plan Section */
+.plan-section {
+  margin-bottom: 0;
+}
+
+.plan-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.plan-current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.plan-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.plan-chip {
+  font-weight: 500;
+}
+
+.plan-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Billing Section */
+.billing-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6c757d;
+  margin: 0 0 16px 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 32px 0;
+}
+
+/* Billing Table */
+.billing-data-table {
+  overflow-x: auto;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+}
+
+.billing-date-text {
+  font-weight: 500;
+  color: #212529;
+}
+
+.billing-id-text {
+  font-family: monospace;
+  color: #6c757d;
+  font-size: 0.8rem;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.billing-payment-info {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+}
+
+.billing-payment-empty {
+  font-size: 0.75rem;
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.billing-status-chip {
+  font-weight: 500;
+  min-width: 90px;
+}
+
+.billing-amount-text {
+  font-weight: 600;
+  color: #212529;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .plan-info-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  
+  .plan-current {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .plan-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    align-self: stretch;
+  }
+  
+  .plan-actions .v-btn {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .billing-data-table {
+    border: none;
+    border-radius: 0;
+  }
+  
+  .billing-date-text {
+    width: 20%;
+  }
+  
+  .billing-id-text {
+    width: 40%;
+  }
+  
+  .billing-payment-info {
+    font-size: 0.7rem;
+    margin-top: 4px;
+  }
+  
+  .billing-status-chip {
+    min-width: 70px;
+    font-size: 0.7rem;
+  }
+}
 </style> 
